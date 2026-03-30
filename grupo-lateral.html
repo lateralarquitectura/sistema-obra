@@ -2296,9 +2296,10 @@ function pgPagos(main){
 
     // Register payment buttons
     if(SESSION.rol==="admin"){
-      html += '<div class="flex gap10 mb14">';
+      html += '<div class="flex gap10 mb14" style="flex-wrap:wrap">';
       html += '<button class="btn btn-primary btn-sm" onclick="abrirRegistrarPago(' + o.id + ',&quot;ext&quot;)">+ Pago recibido (externo)</button>';
       html += '<button class="btn btn-ghost btn-sm" onclick="abrirRegistrarPago(' + o.id + ',&quot;int&quot;)">+ Pago realizado (interno)</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="abrirImportarPagos(' + o.id + ')">⬇ Importar pagos (tabla)</button>';
       html += '</div>';
     }
 
@@ -2349,6 +2350,136 @@ window.abrirRegistrarPago = function(obraId, tipo){
   document.getElementById("pago-modal-title").textContent = tipo==="ext" ? "Registrar pago recibido (externo)" : "Registrar pago realizado (interno)";
   openM("m-registrar-pago");
 };
+
+window.abrirImportarPagos = function(obraId){
+  document.getElementById("ip-obra-id").value = obraId;
+  document.getElementById("ip-tipo").value = "ext";
+  document.getElementById("ip-text").value = "";
+  document.getElementById("ip-result").innerHTML = "";
+  document.getElementById("ip-titulo").textContent = "Importar pagos";
+  toggleIPTipo("ext");
+  openM("m-importar-pagos");
+};
+
+window.toggleIPTipo = function(tipo){
+  document.getElementById("ip-tipo").value = tipo;
+  var btnExt = document.getElementById("ip-btn-ext");
+  var btnInt = document.getElementById("ip-btn-int");
+  var ayudaExt = document.getElementById("ip-ayuda-ext");
+  var ayudaInt = document.getElementById("ip-ayuda-int");
+  if(tipo==="ext"){
+    btnExt.className = "btn btn-primary btn-sm";
+    btnInt.className = "btn btn-ghost btn-sm";
+    ayudaExt.style.display = "";
+    ayudaInt.style.display = "none";
+    document.getElementById("ip-placeholder").placeholder = "2026-03-01,318674,con\n2026-03-15,50000,sin";
+  } else {
+    btnExt.className = "btn btn-ghost btn-sm";
+    btnInt.className = "btn btn-primary btn-sm";
+    ayudaExt.style.display = "none";
+    ayudaInt.style.display = "";
+    document.getElementById("ip-placeholder").placeholder = "2026-03-01,Demoliciones,50000,con\n2026-03-15,DEM,41500,sin";
+  }
+};
+
+window.importarPagos = function(){
+  var obraId = parseInt(document.getElementById("ip-obra-id").value);
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var tipo = document.getElementById("ip-tipo").value;
+  var txt = document.getElementById("ip-text").value.trim();
+  if(!txt){alert("Pega el texto primero");return;}
+
+  var lineas = txt.split("\n").filter(function(l){return l.trim() && !l.trim().startsWith("#");});
+  var errores = [];
+  var importados = 0;
+  var fmtM = function(n){return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",minimumFractionDigits:0}).format(n||0);};
+
+  lineas.forEach(function(linea, idx){
+    var partes = linea.split(",").map(function(p){return p.trim();});
+
+    if(tipo === "ext"){
+      // Format: fecha,monto,iva
+      if(partes.length < 3){
+        errores.push("Línea "+(idx+1)+": faltan columnas (fecha,monto,iva)"); return;
+      }
+      var fecha = partes[0];
+      var monto = parseFloat(partes[1].replace(/[$\s,]/g,""))||0;
+      var iva = partes[2].toLowerCase();
+
+      if(!fecha.match(/^\d{4}-\d{2}-\d{2}$/)){
+        errores.push("Línea "+(idx+1)+": fecha inválida '"+fecha+"' (usa YYYY-MM-DD)"); return;
+      }
+      if(monto<=0){errores.push("Línea "+(idx+1)+": monto inválido"); return;}
+      if(iva!=="con"&&iva!=="sin"){errores.push("Línea "+(idx+1)+": IVA debe ser 'con' o 'sin'"); return;}
+
+      var montoNeto = iva==="con" ? Math.round(monto/1.16) : monto;
+      if(!o.pagosExt) o.pagosExt=[];
+      o.pagosExt.push({
+        id:Date.now()+Math.random(), fecha:fecha,
+        monto:montoNeto, montoConIVA:monto, iva:iva,
+        referencia:"Pago cliente"+(iva==="con"?" (con IVA)":"")
+      });
+      importados++;
+
+    } else {
+      // Format: fecha,partida,monto,iva
+      if(partes.length < 4){
+        errores.push("Línea "+(idx+1)+": faltan columnas (fecha,partida,monto,iva)"); return;
+      }
+      var fecha = partes[0];
+      var partida = partes[1];
+      var monto = parseFloat(partes[2].replace(/[$\s,]/g,""))||0;
+      var iva = partes[3].toLowerCase();
+
+      if(!fecha.match(/^\d{4}-\d{2}-\d{2}$/)){
+        errores.push("Línea "+(idx+1)+": fecha inválida '"+fecha+"' (usa YYYY-MM-DD)"); return;
+      }
+      if(monto<=0){errores.push("Línea "+(idx+1)+": monto inválido"); return;}
+      if(iva!=="con"&&iva!=="sin"){errores.push("Línea "+(idx+1)+": IVA debe ser 'con' o 'sin'"); return;}
+
+      // Validate partida
+      var partidaEncontrada = null;
+      o.partidas.forEach(function(p){
+        if(p.nombre.toLowerCase()===partida.toLowerCase()){partidaEncontrada=p.nombre;}
+        p.conceptos.forEach(function(c){
+          if(c.clave&&c.clave.toLowerCase()===partida.toLowerCase()){partidaEncontrada=p.nombre;}
+        });
+      });
+      // Conceptos libres
+      var libres=["anticipo","general","honorarios","supervision","supervisión","finiquito"];
+      if(!partidaEncontrada && libres.indexOf(partida.toLowerCase())>-1) partidaEncontrada=partida;
+
+      if(!partidaEncontrada){
+        errores.push("Línea "+(idx+1)+": partida '"+partida+"' no existe en esta obra"); return;
+      }
+
+      var montoNeto = iva==="con" ? Math.round(monto/1.16) : monto;
+      if(!o.pagosInt) o.pagosInt=[];
+      o.pagosInt.push({
+        id:Date.now()+Math.random(), fecha:fecha,
+        monto:montoNeto, montoConIVA:monto, iva:iva,
+        partida:partidaEncontrada,
+        referencia:partidaEncontrada+(iva==="con"?" (con IVA)":"")
+      });
+      importados++;
+    }
+  });
+
+  var res = document.getElementById("ip-result");
+  if(errores.length>0 && importados===0){
+    res.innerHTML='<div class="alert alert-err"><strong>No se importó nada:</strong><br>'+errores.join("<br>")+'</div>';
+    return;
+  }
+  if(importados>0){
+    if(window.autoGuardar) window.autoGuardar();
+    var msg='<div class="alert alert-ok">✓ '+importados+' pago(s) importado(s)</div>';
+    if(errores.length>0) msg+='<div class="alert alert-warn mt8">⚠ Líneas con error:<br>'+errores.join("<br>")+'</div>';
+    res.innerHTML=msg;
+    showPage("pagos");
+  }
+};
+
 
 window.guardarPago = function(){
   var obraId = parseInt(document.getElementById("pago-obra-id").value);
@@ -2794,5 +2925,33 @@ window.genPDF=function(obraId,estId,tipo){
     </div>
   </div>
 </div>
+
+<!-- MODAL: Importar Pagos -->
+<div class="modal-overlay" id="m-importar-pagos" style="align-items:flex-start;padding:20px;overflow-y:auto">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title" id="ip-titulo">Importar pagos</div>
+    <input type="hidden" id="ip-obra-id">
+    <input type="hidden" id="ip-tipo" value="ext">
+    <div class="flex gap10 mb14">
+      <button id="ip-btn-ext" class="btn btn-primary btn-sm" onclick="toggleIPTipo('ext')">💰 Pagos del cliente (externos)</button>
+      <button id="ip-btn-int" class="btn btn-ghost btn-sm" onclick="toggleIPTipo('int')">🔧 Pagos a proveedores (internos)</button>
+    </div>
+    <div id="ip-ayuda-ext">
+      <div class="fs12 c2 mb6">Formato: <code style="background:var(--bg3);padding:2px 6px;border-radius:4px">fecha,monto,iva</code></div>
+      <div class="fs12 c3 mb10">• <strong>iva:</strong> <code>con</code> o <code>sin</code> — si es con IVA, el sistema calcula el monto neto automáticamente</div>
+    </div>
+    <div id="ip-ayuda-int" style="display:none">
+      <div class="fs12 c2 mb6">Formato: <code style="background:var(--bg3);padding:2px 6px;border-radius:4px">fecha,partida,monto,iva</code></div>
+      <div class="fs12 c3 mb10">• <strong>partida:</strong> nombre o clave de partida de la obra (ej. <code>DEM</code> o <code>Demoliciones</code>)<br>• <strong>iva:</strong> <code>con</code> o <code>sin</code></div>
+    </div>
+    <textarea id="ip-text" style="width:100%;height:160px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-size:12px;font-family:monospace;outline:none;resize:vertical;margin-bottom:10px" placeholder="2026-03-01,318674,con&#10;2026-03-15,50000,sin"></textarea>
+    <div id="ip-result" class="mb10"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeM('m-importar-pagos')">Cancelar</button>
+      <button class="btn btn-primary" onclick="importarPagos()">⬇ Importar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
