@@ -1620,7 +1620,8 @@ function pgReportesDiarios(main){
               }).join('') +
               '</div>':'') +
             '<div class="flex gap10 mt10">' +
-              '<button class="btn btn-ghost btn-sm" onclick="genPDFReporte('+o.id+',\''+r.fecha+'\')">⬇ PDF reporte</button>' +
+              '<button class="btn btn-ghost btn-sm" onclick="genPDFReporte('+o.id+',\''+r.fecha+'\',false)">⬇ PDF</button>' +
+              (SESSION.rol==="admin"&&r.fotos&&r.fotos.length?'<button class="btn btn-primary btn-sm" onclick="genPDFReporte('+o.id+',\''+r.fecha+'\',true)">⬇ PDF + 🗑 fotos</button>':'') +
             '</div>' +
           '</div>';
         }).join('')
@@ -1670,7 +1671,7 @@ window.generarEstDesdeReportes = function(obraId){
   showPage("reportes-diarios");
 };
 
-window.genPDFReporte = function(obraId, fecha){
+window.genPDFReporte = function(obraId, fecha, eliminarFotos){
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF();
   var o = OBRAS.find(function(x){return x.id===obraId;});
@@ -1678,6 +1679,7 @@ window.genPDFReporte = function(obraId, fecha){
   var r = (o.reportesDiarios||[]).find(function(x){return x.fecha===fecha;});
   if(!r) return;
 
+  // Header
   doc.setFillColor(15,17,23);
   doc.rect(0,0,210,34,"F");
   try{doc.addImage(LOGO,"JPEG",10,6,70,20);}catch(e){
@@ -1692,10 +1694,14 @@ window.genPDFReporte = function(obraId, fecha){
   doc.text("Reporte Diario de Avance",14,y);y+=8;
   doc.setFontSize(10);doc.setFont("helvetica","normal");doc.setTextColor(92,100,120);
   doc.text("Obra: "+o.nombre,14,y);y+=6;
-  doc.text("Fecha: "+r.fecha+" · Avance general: "+r.avanceGlobal+"%",14,y);y+=6;
-  if(r.comentarioGeneral){doc.text("Nota: "+r.comentarioGeneral,14,y);y+=6;}
+  doc.text("Fecha: "+r.fecha+" \u00b7 Avance general: "+r.avanceGlobal+"%",14,y);y+=6;
+  if(r.comentarioGeneral){
+    doc.setTextColor(40,45,55);
+    doc.text("Comentario: "+r.comentarioGeneral,14,y,{maxWidth:182});y+=10;
+  }
   y+=4;
 
+  // Partidas table
   doc.setFillColor(30,35,48);doc.rect(14,y,182,8,"F");
   doc.setTextColor(156,160,178);doc.setFontSize(9);doc.setFont("helvetica","bold");
   doc.text("Partida",16,y+5.5);doc.text("Avance",196,y+5.5,"right");
@@ -1703,22 +1709,63 @@ window.genPDFReporte = function(obraId, fecha){
 
   o.partidas.forEach(function(p,pi){
     var pd = r.partidas[pi]||{};
+    if(y>260){doc.addPage();y=20;}
     doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(40,45,55);
     doc.text(p.nombre,16,y);
     doc.setFont("helvetica","bold");doc.setTextColor(78,205,196);
     doc.text((pd.pctExt||0)+"%",196,y,"right");
     if(pd.comentario){
       doc.setFont("helvetica","italic");doc.setTextColor(92,100,120);doc.setFontSize(8);
-      doc.text("  "+pd.comentario,16,y+4);y+=4;
+      doc.text("  "+pd.comentario,16,y+4,{maxWidth:178});y+=5;
     }
     doc.setDrawColor(46,53,72);doc.setLineWidth(0.2);doc.line(14,y+3,196,y+3);
     y+=9;
-    if(y>260){doc.addPage();y=20;}
   });
 
-  doc.setFontSize(8);doc.setTextColor(92,100,120);doc.setFont("helvetica","normal");
-  doc.text("Generado por Grupo Lateral · "+new Date().toLocaleDateString("es-MX"),14,285);
+  // Fotos
+  var fotos = r.fotos||[];
+  if(fotos.length){
+    if(y>220){doc.addPage();y=20;}
+    y+=6;
+    doc.setFontSize(11);doc.setFont("helvetica","bold");doc.setTextColor(15,17,23);
+    doc.text("Evidencia fotográfica ("+fotos.length+" foto(s))",14,y);y+=8;
+
+    var col=0;var fotoW=85;var fotoH=60;var margin=14;var gap=8;
+    fotos.forEach(function(f){
+      if(y+fotoH>280){doc.addPage();y=20;col=0;}
+      var x = margin + col*(fotoW+gap);
+      try{
+        doc.addImage(f.data,"JPEG",x,y,fotoW,fotoH);
+        if(f.comentario){
+          doc.setFontSize(7);doc.setFont("helvetica","italic");doc.setTextColor(92,100,120);
+          doc.text(f.comentario,x,y+fotoH+4,{maxWidth:fotoW});
+        }
+      }catch(e){}
+      col++;
+      if(col>=2){col=0;y+=fotoH+14;}
+    });
+    if(col>0){y+=fotoH+14;}
+  }
+
+  // Footer
+  var totalPages = doc.internal.getNumberOfPages();
+  for(var i=1;i<=totalPages;i++){
+    doc.setPage(i);
+    doc.setFontSize(8);doc.setTextColor(92,100,120);doc.setFont("helvetica","normal");
+    doc.text("Generado por Grupo Lateral \u00b7 "+new Date().toLocaleDateString("es-MX")+" \u00b7 Pág "+i+"/"+totalPages,14,288);
+  }
+
   doc.save("reporte-"+o.nombre.replace(/[^a-zA-Z0-9]/g,"-")+"-"+r.fecha+".pdf");
+
+  // Eliminar fotos si se pidió
+  if(eliminarFotos && fotos.length){
+    if(confirm("\u00bfEliminar las "+fotos.length+" foto(s) del reporte para liberar espacio en la nube? El PDF ya las contiene.")){
+      r.fotos = [];
+      if(window.autoGuardar) window.autoGuardar();
+      alert("Fotos eliminadas. El PDF queda como registro permanente.");
+      showPage("reportes-diarios");
+    }
+  }
 };
 
 
