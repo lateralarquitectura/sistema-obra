@@ -245,8 +245,34 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
     // Save all data to Firestore
     window.guardarEnFirebase = async function(){
       try {
-        await setDoc(doc(db, "sistema", "obras"), { obras: JSON.stringify(OBRAS) });
+        // Split obras into chunks if too large - store fotos separately
+        var obrasParaGuardar = JSON.parse(JSON.stringify(OBRAS));
+        
+        // Extract fotos and store them separately to avoid Firestore 1MB limit
+        var fotosMap = {};
+        obrasParaGuardar.forEach(function(o){
+          if(o.reportesDiarios){
+            o.reportesDiarios.forEach(function(r){
+              if(r.fotos && r.fotos.length){
+                var key = "fotos_"+o.id+"_"+r.fecha;
+                fotosMap[key] = r.fotos;
+                r.fotos = key; // replace with reference key
+              }
+            });
+          }
+        });
+
+        // Save obras without inline fotos
+        await setDoc(doc(db, "sistema", "obras"), { obras: JSON.stringify(obrasParaGuardar) });
         await setDoc(doc(db, "sistema", "users"), { users: JSON.stringify(USERS) });
+        
+        // Save fotos separately
+        for(var key in fotosMap){
+          try{
+            await setDoc(doc(db, "fotos", key), { data: JSON.stringify(fotosMap[key]) });
+          }catch(fe){ console.warn("No se guardaron fotos para "+key, fe); }
+        }
+        
         console.log("✅ Guardado en Firebase");
       } catch(e) {
         console.error("❌ Error guardando:", e);
@@ -268,6 +294,27 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
           USERS.length = 0;
           data.forEach(function(u){ USERS.push(u); });
         }
+
+        // Restore fotos from separate collection
+        for(var oi=0; oi<OBRAS.length; oi++){
+          var o = OBRAS[oi];
+          if(o.reportesDiarios){
+            for(var ri=0; ri<o.reportesDiarios.length; ri++){
+              var r = o.reportesDiarios[ri];
+              if(typeof r.fotos === 'string' && r.fotos.startsWith('fotos_')){
+                try{
+                  var fotosDoc = await getDoc(doc(db, "fotos", r.fotos));
+                  if(fotosDoc.exists()){
+                    r.fotos = JSON.parse(fotosDoc.data().data);
+                  } else {
+                    r.fotos = [];
+                  }
+                }catch(fe){ r.fotos = []; }
+              }
+            }
+          }
+        }
+
         console.log("✅ Datos cargados de Firebase");
         buildNav();
         showPage("dashboard");
