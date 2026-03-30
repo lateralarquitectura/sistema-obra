@@ -1180,6 +1180,7 @@ function pgObras(main){
     ${(SESSION.rol==="admin"||SESSION.rol==="supervisor")?`
     <div class="divider"></div>
     <div class="flex gap10" style="flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="verDesglose(${o.id})">📊 Ver presupuesto</button>
       ${SESSION.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarObra(${o.id})">✏ Editar</button>`:""}
       <button class="btn btn-ghost btn-sm" onclick="abrirActualizarPres(${o.id},'ext')">⬆ Presupuesto externo</button>
       <button class="btn btn-ghost btn-sm" onclick="abrirActualizarPres(${o.id},'int')">⬆ Presupuesto interno</button>
@@ -1187,6 +1188,127 @@ function pgObras(main){
     </div>`:""}
   </div>`).join("")}`;
 }
+
+window.verDesglose = function(obraId){
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var fmt = function(n){return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",minimumFractionDigits:2}).format(n||0);};
+
+  var sumExt = 0, sumInt = 0;
+  o.partidas.forEach(function(p){
+    var pExt = p.conceptos.reduce(function(s,c){return s+(c.importe||0);},0);
+    var pInt = p.conceptos.reduce(function(s,c){return s+(c.importeInt||0);},0);
+    sumExt += pExt;
+    sumInt += pInt;
+  });
+
+  var diffExt = (o.presupuestoExterno||0) - sumExt;
+  var diffInt = (o.presupuestoInterno||0) - sumInt;
+
+  var html = '<div class="page-title mb4">Presupuesto: ' + o.nombre + '</div>';
+  html += '<button class="btn btn-ghost btn-sm mb14" onclick="showPage(&quot;obras&quot;)">← Regresar</button>';
+
+  // Summary boxes
+  html += '<div class="g2 mb14">';
+  html += '<div class="anticipo-box">';
+  html += '<div class="stat-lbl mb8">PRESUPUESTO EXTERNO</div>';
+  html += '<div class="flex aic gap10 mb4"><span class="fs12 c2" style="flex:1">Monto declarado</span><span class="fw6 cteal">' + fmt(o.presupuestoExterno) + '</span></div>';
+  html += '<div class="flex aic gap10 mb4"><span class="fs12 c2" style="flex:1">Suma de partidas</span><span class="fw6">' + fmt(sumExt) + '</span></div>';
+  html += '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px" class="flex aic gap10">';
+  html += '<span class="fs12 fw6" style="flex:1">Diferencia</span>';
+  html += '<span class="fw6" style="color:' + (Math.abs(diffExt)<1 ? 'var(--teal)' : 'var(--coral)') + '">' + fmt(diffExt) + '</span></div>';
+  if(Math.abs(diffExt)>1) html += '<div class="fs11 mt8" style="color:var(--coral)">⚠ El monto declarado no coincide con la suma de conceptos</div>';
+  else html += '<div class="fs11 mt8" style="color:var(--teal)">✓ Cuadra perfectamente</div>';
+  html += '</div>';
+
+  html += '<div class="anticipo-box">';
+  html += '<div class="stat-lbl mb8">PRESUPUESTO INTERNO</div>';
+  if(o.presupuestoInterno){
+    html += '<div class="flex aic gap10 mb4"><span class="fs12 c2" style="flex:1">Monto declarado</span><span class="fw6" style="color:var(--coral)">' + fmt(o.presupuestoInterno) + '</span></div>';
+    html += '<div class="flex aic gap10 mb4"><span class="fs12 c2" style="flex:1">Suma de partidas</span><span class="fw6">' + fmt(sumInt) + '</span></div>';
+    html += '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px" class="flex aic gap10">';
+    html += '<span class="fs12 fw6" style="flex:1">Diferencia</span>';
+    html += '<span class="fw6" style="color:' + (Math.abs(diffInt)<1 ? 'var(--teal)' : 'var(--coral)') + '">' + fmt(diffInt) + '</span></div>';
+    if(Math.abs(diffInt)>1) html += '<div class="fs11 mt8" style="color:var(--coral)">⚠ El monto declarado no coincide con la suma de conceptos</div>';
+    else html += '<div class="fs11 mt8" style="color:var(--teal)">✓ Cuadra perfectamente</div>';
+  } else {
+    html += '<div class="fs12 c3">Sin presupuesto interno cargado</div>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  // Partidas detail
+  o.partidas.forEach(function(p){
+    var pExt = p.conceptos.reduce(function(s,c){return s+(c.importe||0);},0);
+    var pInt = p.conceptos.reduce(function(s,c){return s+(c.importeInt||0);},0);
+
+    html += '<div class="card mb10">';
+    html += '<div class="flex aic gap10 mb10">';
+    html += '<div class="sec-title" style="flex:1">' + p.nombre + '</div>';
+    html += '<span class="fs12 cteal fw6">Ext: ' + fmt(pExt) + '</span>';
+    if(o.presupuestoInterno) html += '<span class="fs12 fw6" style="color:var(--coral)">Int: ' + fmt(pInt) + '</span>';
+    html += '</div>';
+
+    if(p.conceptos && p.conceptos.length){
+      html += '<div style="overflow-x:auto">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+      html += '<thead><tr style="background:var(--bg3)">';
+      html += '<th style="text-align:left;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Clave</th>';
+      html += '<th style="text-align:left;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Concepto</th>';
+      html += '<th style="text-align:center;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Unidad</th>';
+      html += '<th style="text-align:right;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Cant.</th>';
+      html += '<th style="text-align:right;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">P.U. Ext</th>';
+      html += '<th style="text-align:right;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Total Ext</th>';
+      if(o.presupuestoInterno){
+        html += '<th style="text-align:right;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">P.U. Int</th>';
+        html += '<th style="text-align:right;padding:6px 8px;color:var(--text3);border-bottom:1px solid var(--border)">Total Int</th>';
+      }
+      html += '</tr></thead><tbody>';
+
+      p.conceptos.forEach(function(c, ci){
+        var rowBg = ci%2===0 ? '' : 'background:var(--bg3)';
+        html += '<tr style="' + rowBg + '">';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">' + (c.clave||'') + '</td>';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border)">' + (c.concepto||c.nombre||'') + '</td>';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;color:var(--text3)">' + (c.unidad||'') + '</td>';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">' + (c.cantidad||0) + '</td>';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">' + fmt(c.precioUnit||0) + '</td>';
+        html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;color:var(--teal)">' + fmt(c.importe||0) + '</td>';
+        if(o.presupuestoInterno){
+          html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">' + fmt(c.precioUnitInt||0) + '</td>';
+          html += '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;color:var(--coral)">' + fmt(c.importeInt||0) + '</td>';
+        }
+        html += '</tr>';
+      });
+
+      // Subtotal row
+      html += '<tr style="background:var(--bg2)">';
+      html += '<td colspan="5" style="padding:8px;font-weight:700;font-size:12px">Subtotal ' + p.nombre + '</td>';
+      html += '<td style="padding:8px;text-align:right;font-weight:700;color:var(--teal)">' + fmt(pExt) + '</td>';
+      if(o.presupuestoInterno){
+        html += '<td style="padding:8px"></td>';
+        html += '<td style="padding:8px;text-align:right;font-weight:700;color:var(--coral)">' + fmt(pInt) + '</td>';
+      }
+      html += '</tr>';
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="fs12 c3">Sin conceptos cargados — solo monto global</div>';
+    }
+    html += '</div>';
+  });
+
+  // Grand total
+  html += '<div class="card mb14" style="background:var(--bg2)">';
+  html += '<div class="flex aic gap10">';
+  html += '<span class="sec-title" style="flex:1">TOTAL GENERAL (suma de partidas)</span>';
+  html += '<span style="font-size:20px;font-weight:700;color:var(--teal)">' + fmt(sumExt) + '</span>';
+  if(o.presupuestoInterno) html += '<span style="font-size:20px;font-weight:700;color:var(--coral)">' + fmt(sumInt) + '</span>';
+  html += '</div></div>';
+
+  // Show in main
+  var main = document.querySelector("main");
+  if(main) main.innerHTML = html;
+};
 
 window.eliminarObra=function(obraId){
   const o=OBRAS.find(x=>x.id===obraId);if(!o)return;
