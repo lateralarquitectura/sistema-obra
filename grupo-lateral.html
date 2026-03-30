@@ -2330,7 +2330,15 @@ function pgPagos(main){
         html += '<tr><td style="padding:6px;border-bottom:1px solid var(--border)">' + p.fecha + '</td>';
         html += '<td style="padding:6px;border-bottom:1px solid var(--border)"><span class="badge ' + (p.tipo==="Externo"?"b-teal":"b-amber") + '">' + p.tipo + '</span></td>';
         html += '<td style="padding:6px;border-bottom:1px solid var(--border);color:var(--text2)">' + (p.referencia||"—") + '</td>';
-        html += '<td style="padding:6px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;color:var(--teal)">' + fmtM(p.monto) + '</td></tr>';
+        html += '<td style="padding:6px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;color:var(--teal)">' + fmtM(p.monto) + '</td>';
+        if(SESSION.rol==="admin" && !p.esAnticipo){
+          html += '<td style="padding:6px;border-bottom:1px solid var(--border);text-align:right">' +
+            '<button class="btn btn-ghost btn-xs" style="margin-right:4px" onclick="editarPago(' + o.id + ',\'' + p.tipo + '\',' + p.id + ')">✏</button>' +
+            '<button class="btn btn-red btn-xs" onclick="eliminarPago(' + o.id + ',\'' + p.tipo + '\',' + p.id + ')">✕</button></td>';
+        } else {
+          html += '<td style="padding:6px;border-bottom:1px solid var(--border)"></td>';
+        }
+        html += '</tr>';
       });
       html += '</tbody></table>';
     }
@@ -2480,6 +2488,69 @@ window.importarPagos = function(){
   }
 };
 
+
+window.editarPago = function(obraId, tipo, pagoId){
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var arr = tipo==="Externo" ? (o.pagosExt||[]) : (o.pagosInt||[]);
+  var p = arr.find(function(x){return x.id==pagoId;});
+  if(!p) return;
+
+  document.getElementById("ep-obra-id").value = obraId;
+  document.getElementById("ep-tipo").value = tipo;
+  document.getElementById("ep-pago-id").value = pagoId;
+  document.getElementById("ep-fecha").value = p.fecha||"";
+  document.getElementById("ep-monto").value = p.montoConIVA||p.monto||"";
+  document.getElementById("ep-iva").value = p.iva||"sin";
+  document.getElementById("ep-referencia").value = p.referencia||"";
+  if(tipo==="Interno"){
+    document.getElementById("ep-partida-row").style.display="";
+    document.getElementById("ep-partida").value = p.partida||"";
+  } else {
+    document.getElementById("ep-partida-row").style.display="none";
+  }
+  openM("m-editar-pago");
+};
+
+window.guardarEdicionPago = function(){
+  var obraId = parseInt(document.getElementById("ep-obra-id").value);
+  var tipo = document.getElementById("ep-tipo").value;
+  var pagoId = parseFloat(document.getElementById("ep-pago-id").value);
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var arr = tipo==="Externo" ? (o.pagosExt||[]) : (o.pagosInt||[]);
+  var p = arr.find(function(x){return x.id==pagoId;});
+  if(!p) return;
+
+  var fecha = document.getElementById("ep-fecha").value;
+  var montoRaw = parseFloat(document.getElementById("ep-monto").value)||0;
+  var iva = document.getElementById("ep-iva").value;
+  var referencia = document.getElementById("ep-referencia").value;
+
+  if(!fecha||montoRaw<=0){alert("Fecha y monto son obligatorios");return;}
+
+  p.fecha = fecha;
+  p.iva = iva;
+  p.montoConIVA = montoRaw;
+  p.monto = iva==="con" ? Math.round(montoRaw/1.16) : montoRaw;
+  p.referencia = referencia;
+  if(tipo==="Interno") p.partida = document.getElementById("ep-partida").value;
+
+  if(window.autoGuardar) window.autoGuardar();
+  closeM("m-editar-pago");
+  showPage("pagos");
+};
+
+window.eliminarPago = function(obraId, tipo, pagoId){
+  if(!confirm("¿Eliminar este pago?")) return;
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var arr = tipo==="Externo" ? (o.pagosExt||[]) : (o.pagosInt||[]);
+  var idx = arr.findIndex(function(p){return p.id==pagoId;});
+  if(idx>-1) arr.splice(idx,1);
+  if(window.autoGuardar) window.autoGuardar();
+  showPage("pagos");
+};
 
 window.guardarPago = function(){
   var obraId = parseInt(document.getElementById("pago-obra-id").value);
@@ -2953,5 +3024,31 @@ window.genPDF=function(obraId,estId,tipo){
   </div>
 </div>
 
+
+<!-- MODAL: Editar Pago -->
+<div class="modal-overlay" id="m-editar-pago">
+  <div class="modal">
+    <div class="modal-title">Editar pago</div>
+    <input type="hidden" id="ep-obra-id">
+    <input type="hidden" id="ep-tipo">
+    <input type="hidden" id="ep-pago-id">
+    <div class="g2">
+      <div><label class="form-label">Fecha</label><input class="form-input" type="date" id="ep-fecha"></div>
+      <div><label class="form-label">Monto</label><input class="form-input" type="number" id="ep-monto" placeholder="0.00"></div>
+      <div><label class="form-label">IVA</label>
+        <select class="form-input" id="ep-iva">
+          <option value="sin">Sin IVA</option>
+          <option value="con">Con IVA (se calcula neto)</option>
+        </select>
+      </div>
+      <div id="ep-partida-row"><label class="form-label">Partida</label><input class="form-input" id="ep-partida" placeholder="Nombre o clave de partida"></div>
+      <div style="grid-column:1/-1"><label class="form-label">Referencia</label><input class="form-input" id="ep-referencia" placeholder="Transferencia, cheque, etc."></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeM('m-editar-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEdicionPago()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
