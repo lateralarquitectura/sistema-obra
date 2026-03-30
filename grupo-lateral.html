@@ -2266,7 +2266,9 @@ function pgPagos(main){
       .reduce(function(s,e){return s+Math.round(e.montoBase*1.16-e.descAnticipo);},0);
     var totalEstInt = o.estimacionesInt.filter(function(e){return e.status==="aprobada";})
       .reduce(function(s,e){return s+Math.round(e.montoBase*1.16-e.descAnticipo);},0);
-    var totalPagosExt = (o.pagosExt||[]).reduce(function(s,p){return s+p.monto;},0);
+    // Include anticipo as a received payment
+    var anticipo = o.anticipo||0;
+    var totalPagosExt = (o.pagosExt||[]).reduce(function(s,p){return s+p.monto;},0) + anticipo;
     var totalPagosInt = (o.pagosInt||[]).reduce(function(s,p){return s+p.monto;},0);
     var saldoExt = totalEstExt - totalPagosExt;
     var saldoInt = totalEstInt - totalPagosInt;
@@ -2303,12 +2305,23 @@ function pgPagos(main){
     // Payment history
     var pagosExtArr = o.pagosExt||[];
     var pagosIntArr = o.pagosInt||[];
-    if(pagosExtArr.length||pagosIntArr.length){
+    // Add anticipo as virtual payment entry for display
+    var pagosExtConAnticipo = pagosExtArr.slice();
+    if(anticipo>0){
+      pagosExtConAnticipo = [{
+        id:"anticipo",
+        fecha: o.fechaInicio||"—",
+        monto: anticipo,
+        referencia: "Anticipo (" + (o.pctAnticipo||0) + "%)",
+        esAnticipo: true
+      }].concat(pagosExtConAnticipo);
+    }
+    if(pagosExtConAnticipo.length||pagosIntArr.length){
       html += '<div class="sec-title mb10" style="font-size:12px">Historial de pagos</div>';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
       html += '<thead><tr><th style="text-align:left;padding:6px;color:var(--text3);border-bottom:1px solid var(--border)">Fecha</th><th style="text-align:left;padding:6px;color:var(--text3);border-bottom:1px solid var(--border)">Tipo</th><th style="text-align:left;padding:6px;color:var(--text3);border-bottom:1px solid var(--border)">Referencia</th><th style="text-align:right;padding:6px;color:var(--text3);border-bottom:1px solid var(--border)">Monto</th></tr></thead><tbody>';
 
-      var todosPagos = pagosExtArr.map(function(p){return Object.assign({},p,{tipo:"Externo"});})
+      var todosPagos = pagosExtConAnticipo.map(function(p){return Object.assign({},p,{tipo:"Externo"});})
         .concat(pagosIntArr.map(function(p){return Object.assign({},p,{tipo:"Interno"});}))
         .sort(function(a,b){return b.fecha.localeCompare(a.fecha);});
 
