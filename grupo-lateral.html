@@ -468,8 +468,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       </div>
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:14px">
         <div class="sec-title mb10">⬇ Importar partidas desde texto</div>
-        <div class="fs12 c3 mb10">Formato: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px">CLAVE,Nombre de partida,importe</code> — una por línea</div>
-        <textarea id="import-text" placeholder="PRE,Preliminares,0&#10;DEM,Demoliciones,376333.07&#10;HER,Herrería y Estructura,59827.88" style="width:100%;height:120px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;outline:none;resize:vertical"></textarea>
+        <div class="fs12 c3 mb10">Formato: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px">CLAVE,Nombre de partida,importeExt,importeInt</code> — una por línea. El importeInt es opcional.</div>
+        <textarea id="import-text" placeholder="PRE,Preliminares,0,0&#10;DEM,Demoliciones,376333.07,310000&#10;HER,Herrería y Estructura,59827.88,48000" style="width:100%;height:120px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;outline:none;resize:vertical"></textarea>
         <div class="flex gap10 mt10">
           <button class="btn btn-primary btn-sm" onclick="importarPartidas()">⬇ Importar partidas</button>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-text').value=''">Limpiar</button>
@@ -928,11 +928,14 @@ window.importarPartidas=function(){
     const clave=partes[0].trim();
     const nombre=partes[1].trim();
     const importe=parseFloat(partes[2])||0;
+    const importeInt=parseFloat(partes[3])||0;
     if(!nombre)return;
     WIZ_PARTIDAS.push({
       id:Date.now()+Math.random(),
       nombre:nombre,
-      conceptos:[{clave:clave,concepto:nombre,unidad:"LOTE",cantidad:1,precioUnit:importe,importe:importe}],
+      conceptos:[{clave:clave,concepto:nombre,unidad:"LOTE",cantidad:1,
+        precioUnit:importe,importe:importe,
+        precioUnitInt:importeInt,importeInt:importeInt}],
       pctInt:0,pctExt:0
     });
     importadas++;
@@ -943,7 +946,7 @@ window.importarPartidas=function(){
     renderPartidasEditor();
     setTimeout(()=>res.innerHTML="",3000);
   } else {
-    res.innerHTML=`<div class="alert alert-err">No se pudo importar. Verifica el formato: CLAVE,Nombre,importe</div>`;
+    res.innerHTML=`<div class="alert alert-err">No se pudo importar. Verifica el formato: CLAVE,Nombre,importeExt,importeInt</div>`;
   }
 };
 window.addPartida=function(){WIZ_PARTIDAS.push({id:Date.now(),nombre:"",conceptos:[]});renderPartidasEditor();}
@@ -1206,7 +1209,10 @@ window.verDesglose = function(obraId){
   var diffInt = (o.presupuestoInterno||0) - sumInt;
 
   var html = '<div class="page-title mb4">Presupuesto: ' + o.nombre + '</div>';
-  html += '<button class="btn btn-ghost btn-sm mb14" onclick="showPage(&quot;obras&quot;)">← Regresar</button>';
+  html += '<div class="flex gap10 mb14">';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;obras&quot;)">← Regresar</button>';
+  html += '<button class="btn btn-primary btn-sm" onclick="abrirImportarInt(' + obraId + ')">⬆ Importar precios internos</button>';
+  html += '</div>';
 
   // Summary boxes
   html += '<div class="g2 mb14">';
@@ -1308,6 +1314,75 @@ window.verDesglose = function(obraId){
   // Show in main
   var main = document.querySelector("main");
   if(main) main.innerHTML = html;
+};
+
+window.abrirImportarInt = function(obraId){
+  document.getElementById("ii-obra-id").value = obraId;
+  document.getElementById("ii-text").value = "";
+  document.getElementById("ii-result").innerHTML = "";
+  openM("m-importar-int");
+};
+
+window.importarPreciosInt = function(){
+  var obraId = parseInt(document.getElementById("ii-obra-id").value);
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var txt = document.getElementById("ii-text").value.trim();
+  if(!txt){alert("Pega el texto primero");return;}
+  var lineas = txt.split("\n").filter(function(l){return l.trim();});
+  var actualizadas = 0;
+  var noEncontradas = [];
+
+  lineas.forEach(function(linea){
+    var partes = linea.split(",");
+    if(partes.length<2) return;
+    var clave = partes[0].trim();
+    var nombre = partes[1].trim();
+    var importeExt = parseFloat(partes[2])||0;
+    var importeInt = parseFloat(partes[3])||0;
+
+    // Find matching partida by clave or nombre
+    var encontrada = false;
+    o.partidas.forEach(function(p){
+      p.conceptos.forEach(function(c){
+        if(c.clave===clave || c.concepto===nombre || p.nombre===nombre){
+          if(importeInt>0){
+            c.precioUnitInt = importeInt;
+            c.importeInt = importeInt * (c.cantidad||1);
+          }
+          if(importeExt>0 && c.importe===0){
+            c.precioUnit = importeExt;
+            c.importe = importeExt * (c.cantidad||1);
+          }
+          encontrada = true;
+          actualizadas++;
+        }
+      });
+      // Also match by partida nombre directly (for single-concept partidas)
+      if(!encontrada && (p.nombre===nombre || p.nombre.toLowerCase().includes(nombre.toLowerCase()))){
+        if(p.conceptos.length===1){
+          if(importeInt>0){
+            p.conceptos[0].precioUnitInt = importeInt;
+            p.conceptos[0].importeInt = importeInt;
+          }
+          if(importeExt>0 && p.conceptos[0].importe===0){
+            p.conceptos[0].precioUnit = importeExt;
+            p.conceptos[0].importe = importeExt;
+          }
+          encontrada = true;
+          actualizadas++;
+        }
+      }
+    });
+    if(!encontrada) noEncontradas.push(clave+" "+nombre);
+  });
+
+  var res = document.getElementById("ii-result");
+  var msg = '<div class="alert alert-ok">✓ '+actualizadas+' concepto(s) actualizado(s)</div>';
+  if(noEncontradas.length) msg += '<div class="alert alert-warn mt8">⚠ No encontrados: '+noEncontradas.join(", ")+'</div>';
+  res.innerHTML = msg;
+
+  if(window.autoGuardar) window.autoGuardar();
 };
 
 window.eliminarObra=function(obraId){
@@ -2687,6 +2762,22 @@ window.genPDF=function(obraId,estId,tipo){
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeM('m-nuevo-adicional')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarAdicional()">✓ Guardar adicional</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Importar Precios Internos -->
+<div class="modal-overlay" id="m-importar-int">
+  <div class="modal">
+    <div class="modal-title">Importar precios internos</div>
+    <input type="hidden" id="ii-obra-id">
+    <div class="fs12 c2 mb10">Pega el texto con el formato <code style="background:var(--bg3);padding:2px 6px;border-radius:4px">CLAVE,Nombre,importeExt,importeInt</code> — el sistema buscará cada partida por clave o nombre y actualizará los precios internos.</div>
+    <div class="fs12 c3 mb14">Si la clave/nombre no coincide exactamente con lo que ya tienes, aparecerá una advertencia.</div>
+    <textarea id="ii-text" style="width:100%;height:160px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-size:12px;outline:none;resize:vertical;margin-bottom:10px" placeholder="PRE,Preliminares,0,0&#10;DEM,Demoliciones,376333.07,310000&#10;HER,Herrería y Estructura,59827.88,48000"></textarea>
+    <div id="ii-result" class="mb10"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeM('m-importar-int')">Cerrar</button>
+      <button class="btn btn-primary" onclick="importarPreciosInt()">⬆ Importar</button>
     </div>
   </div>
 </div>
