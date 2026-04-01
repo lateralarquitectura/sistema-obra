@@ -2350,12 +2350,31 @@ function pgPagos(main){
 }
 
 window.abrirRegistrarPago = function(obraId, tipo){
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
   document.getElementById("pago-obra-id").value = obraId;
   document.getElementById("pago-tipo").value = tipo;
   document.getElementById("pago-monto").value = "";
+  document.getElementById("pago-iva").value = "sin";
   document.getElementById("pago-fecha").value = new Date().toISOString().split("T")[0];
   document.getElementById("pago-referencia").value = "";
   document.getElementById("pago-modal-title").textContent = tipo==="ext" ? "Registrar pago recibido (externo)" : "Registrar pago realizado (interno)";
+
+  // Populate partida dropdown
+  var select = document.getElementById("pago-partida");
+  var partRow = document.getElementById("pago-partida-row");
+  if(tipo === "int"){
+    partRow.style.display = "";
+    var opts = '<option value="">-- Selecciona partida --</option>';
+    o.partidas.forEach(function(p){
+      opts += '<option value="' + p.nombre + '">' + p.nombre + '</option>';
+    });
+    select.innerHTML = opts;
+  } else {
+    // External: no partida needed
+    partRow.style.display = "none";
+    select.innerHTML = "";
+  }
   openM("m-registrar-pago");
 };
 
@@ -2555,16 +2574,29 @@ window.eliminarPago = function(obraId, tipo, pagoId){
 window.guardarPago = function(){
   var obraId = parseInt(document.getElementById("pago-obra-id").value);
   var tipo = document.getElementById("pago-tipo").value;
-  var monto = parseFloat(document.getElementById("pago-monto").value)||0;
+  var montoRaw = parseFloat(document.getElementById("pago-monto").value)||0;
+  var iva = document.getElementById("pago-iva").value;
   var fecha = document.getElementById("pago-fecha").value;
   var referencia = document.getElementById("pago-referencia").value;
+  var partida = document.getElementById("pago-partida").value;
 
-  if(!monto){alert("El monto es obligatorio");return;}
+  if(!montoRaw){alert("El monto es obligatorio");return;}
+  if(tipo==="int" && !partida){alert("Selecciona la partida");return;}
 
   var o = OBRAS.find(function(x){return x.id===obraId;});
   if(!o) return;
 
-  var pago = {id:Date.now(), fecha:fecha, monto:monto, referencia:referencia};
+  var montoNeto = iva==="con" ? Math.round(montoRaw/1.16) : montoRaw;
+  var pago = {
+    id: Date.now(),
+    fecha: fecha,
+    monto: montoNeto,
+    montoConIVA: montoRaw,
+    iva: iva,
+    referencia: referencia || (tipo==="int" ? partida : "Pago cliente"),
+    partida: tipo==="int" ? partida : undefined
+  };
+
   if(tipo==="ext"){
     if(!o.pagosExt) o.pagosExt=[];
     o.pagosExt.push(pago);
@@ -2942,8 +2974,18 @@ window.genPDF=function(obraId,estId,tipo){
     <input type="hidden" id="pago-tipo">
     <div class="g2">
       <div><label class="form-label">Fecha del pago</label><input class="form-input" type="date" id="pago-fecha"></div>
-      <div><label class="form-label">Monto (MXN) <span style="color:var(--red)">*</span></label><input class="form-input" type="number" id="pago-monto" placeholder="0.00"></div>
-      <div style="grid-column:1/-1"><label class="form-label">Referencia / Concepto</label><input class="form-input" id="pago-referencia" placeholder="Ej. Transferencia SPEI, Cheque #123..."></div>
+      <div><label class="form-label">Monto <span style="color:var(--red)">*</span></label><input class="form-input" type="number" id="pago-monto" placeholder="0.00"></div>
+      <div><label class="form-label">IVA</label>
+        <select class="form-input" id="pago-iva">
+          <option value="sin">Sin IVA</option>
+          <option value="con">Con IVA (se calcula neto)</option>
+        </select>
+      </div>
+      <div id="pago-partida-row">
+        <label class="form-label">Partida <span style="color:var(--red)">*</span></label>
+        <select class="form-input" id="pago-partida"></select>
+      </div>
+      <div style="grid-column:1/-1"><label class="form-label">Referencia</label><input class="form-input" id="pago-referencia" placeholder="Ej. Transferencia SPEI, Cheque #123..."></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeM('m-registrar-pago')">Cancelar</button>
