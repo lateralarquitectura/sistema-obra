@@ -3057,12 +3057,8 @@ window.genPDF=function(obraId,estId,tipo){
       doc.rect(x,y,Math.round(w*pct/100),h,'F');
     }
   }
-  doc.setFillColor(15,17,23);doc.rect(0,0,210,34,"F");
-  try{doc.addImage(LOGO,"JPEG",10,6,70,20);}catch(err){
-    doc.setTextColor(201,169,110);doc.setFontSize(16);doc.setFont("helvetica","bold");doc.text("GRUPO LATERAL",12,20);
-  }
-  doc.setTextColor(92,100,120);doc.setFontSize(8);doc.setFont("helvetica","normal");doc.text("Arquitectura y Construcción",12,30);
-  let y=48;
+  drawHeader();
+  let y=46;
   if(tipo==="avance"){
     doc.setFontSize(15);doc.setFont("helvetica","bold");doc.setTextColor(15,17,23);doc.text("Reporte de Avance de Obra",14,y);y+=10;
     doc.setFontSize(10);doc.setFont("helvetica","normal");doc.setTextColor(92,100,120);
