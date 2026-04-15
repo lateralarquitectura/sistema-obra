@@ -3003,11 +3003,63 @@ window.descargarCSV=function(obraId,estId){
 
 // ══════ PDF ══════
 window.genPDF=function(obraId,estId,tipo){
-  const {jsPDF}=window.jspdf;
   if(!window.jspdf){alert('Error: librería PDF no cargada. Verifica tu conexión a internet.');return;}
+  const {jsPDF}=window.jspdf;
   const doc=new jsPDF();
   const o=OBRAS.find(x=>x.id===obraId);
-  if(!o){alert('Error: obra no encontrada (id='+obraId+')');return;}
+  if(!o){alert('Error: obra no encontrada');return;}
+  
+  // ── Paleta Tadao Ando ──
+  const C = {
+    black:  [10,10,10],
+    dark:   [20,20,20],
+    mid:    [40,40,40],
+    line:   [36,36,36],
+    text1:  [232,228,222],
+    text2:  [122,117,112],
+    text3:  [61,61,61],
+    copper: [184,135,74],
+    copper2:[212,165,116],
+    white:  [255,255,255]
+  };
+
+  // ── Header helper ──
+  function drawHeader(){
+    // Full black header bar
+    doc.setFillColor(...C.black);
+    doc.rect(0,0,210,38,'F');
+    // Logo
+    try{doc.addImage(LOGO,'PNG',10,7,80,22);}catch(e){
+      doc.setTextColor(...C.copper);doc.setFontSize(14);doc.setFont('helvetica','bold');
+      doc.text('GRUPO LATERAL',12,22);
+    }
+    // Copper line under header
+    doc.setFillColor(...C.copper);
+    doc.rect(0,38,210,0.6,'F');
+  }
+
+  // ── Footer helper ──
+  function drawFooter(pageNum, totalPages){
+    doc.setFillColor(...C.black);
+    doc.rect(0,282,210,15,'F');
+    doc.setFillColor(...C.copper);
+    doc.rect(0,282,210,0.4,'F');
+    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...C.text2);
+    doc.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',14,289);
+    doc.text('Pág '+pageNum+'/'+totalPages,196,289,'right');
+    doc.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),105,289,'center');
+  }
+
+  // ── Horizontal bar helper ──
+  function drawBar(x, y, w, pct, h){
+    h = h||3;
+    doc.setFillColor(...C.line);
+    doc.rect(x,y,w,h,'F');
+    if(pct>0){
+      doc.setFillColor(...C.copper);
+      doc.rect(x,y,Math.round(w*pct/100),h,'F');
+    }
+  }
   doc.setFillColor(15,17,23);doc.rect(0,0,210,34,"F");
   try{doc.addImage(LOGO,"JPEG",10,6,70,20);}catch(err){
     doc.setTextColor(201,169,110);doc.setFontSize(16);doc.setFont("helvetica","bold");doc.text("GRUPO LATERAL",12,20);
@@ -3030,50 +3082,101 @@ window.genPDF=function(obraId,estId,tipo){
     });
   } else if(tipo==="ext"||tipo==="int"){
     const arr=tipo==="int"?o.estimacionesInt:o.estimacionesExt;
-    const e=arr.find(x=>x.id===estId||x.id===parseInt(estId))||arr[arr.length-1];if(!e){alert('Error: estimación no encontrada');return;}
-    doc.setFontSize(15);doc.setFont("helvetica","bold");doc.setTextColor(15,17,23);
-    doc.text(tipo==="int"?"Estimación Interna — Pago a Proveedor":"Estimación Externa — Cobro a Cliente",14,y);y+=10;
-    doc.setFontSize(10);doc.setFont("helvetica","normal");doc.setTextColor(92,100,120);
-    doc.text(`Obra: ${o.nombre}`,14,y);y+=6;doc.text(`Cliente: ${o.cliente}`,14,y);y+=6;
-    doc.text(`Estimación: ${e.num} · Fecha: ${e.fecha}`,14,y);y+=12;
-    const base=(tipo==="int"?(o.presupuestoInterno||o.presupuestoExterno):o.presupuestoExterno)/o.partidas.length;
-    doc.setFillColor(30,35,48);doc.rect(14,y,182,8,"F");
-    doc.setTextColor(156,160,178);doc.setFontSize(9);doc.setFont("helvetica","bold");
-    doc.text("Partida",16,y+5.5);doc.text("Avance",90,y+5.5);doc.text("Base",130,y+5.5,"right");doc.text("IVA 16%",158,y+5.5,"right");doc.text("Total",196,y+5.5,"right");y+=11;
-    let totalBase=0;let totalIVA=0;let totalFinal=0;
+    const e=arr.find(x=>x.id===estId||x.id===parseInt(estId))||arr[arr.length-1];
+    if(!e){alert('Error: estimación no encontrada');return;}
+
+    const pres = tipo==="int" ? (o.presupuestoInterno||o.presupuestoExterno) : o.presupuestoExterno;
+
+    drawHeader();
+    let y=50;
+
+    // Title
+    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...C.copper);
+    doc.text(tipo==="int"?"ESTIMACIÓN INTERNA":"ESTIMACIÓN EXTERNA",14,y);y+=7;
+    doc.setFontSize(18);doc.setFont('helvetica','bold');doc.setTextColor(...C.text1);
+    doc.text(o.nombre,14,y);y+=8;
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...C.text2);
+    doc.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,14,y);y+=14;
+
+    // Copper separator
+    doc.setFillColor(...C.copper);doc.rect(14,y,182,0.4,'F');y+=8;
+
+    // Partidas table header
+    doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...C.text2);
+    doc.setLetterSpacing && doc.setLetterSpacing(0.5);
+    doc.text('PARTIDA',14,y);
+    doc.text('AVANCE EST.',100,y);
+    doc.text('BASE',148,y,'right');
+    doc.text('IVA',168,y,'right');
+    doc.text('TOTAL',196,y,'right');
+    y+=5;
+    doc.setFillColor(...C.line);doc.rect(14,y,182,0.2,'F');y+=5;
+
+    let totalBase=0;
     o.partidas.forEach((p,i)=>{
-      const montoBase=Math.round(base*(e.pctPartidas[i]/100));
-      const iva=Math.round(montoBase*0.16);
-      const total=montoBase+iva;
-      totalBase+=montoBase;totalIVA+=iva;totalFinal+=total;
-      doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(60,65,80);
-      doc.text(p.nombre,16,y+5);
-      doc.text(`${e.pctPartidas[i]}%`,90,y+5);
-      doc.setTextColor(30,35,48);
-      doc.text(fmt(montoBase),130,y+5,"right");
-      doc.setTextColor(92,100,120);
-      doc.text(fmt(iva),158,y+5,"right");
-      doc.setTextColor(78,205,196);doc.setFont("helvetica","bold");
-      doc.text(fmt(total),196,y+5,"right");
-      doc.setDrawColor(40,48,65);doc.setLineWidth(0.2);doc.line(14,y+8,196,y+8);y+=10;
-      if(y>260){doc.addPage();y=20;}
+      if(y>255){doc.addPage();drawHeader();drawFooter(doc.internal.getNumberOfPages(),doc.internal.getNumberOfPages());y=50;}
+      var importeP = p.conceptos.reduce(function(s,c){return s+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
+      if(!importeP) importeP = pres/o.partidas.length;
+      const pct = e.pctPartidas[i]||0;
+      const mBase = Math.round(importeP*(pct/100));
+      const iva = Math.round(mBase*0.16);
+      const total = mBase+iva;
+      totalBase+=mBase;
+
+      // Partida name
+      doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...C.text1);
+      doc.text(p.nombre,14,y+4);
+
+      // Bar graph for pct
+      const barX=100, barW=40;
+      drawBar(barX,y+1,barW,pct,2.5);
+      doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...C.copper);
+      doc.text(pct+'%',barX+barW+3,y+4);
+
+      // Amounts
+      if(mBase>0){
+        doc.setTextColor(...C.text2);doc.setFontSize(8);
+        doc.text(fmt(mBase),148,y+4,'right');
+        doc.text(fmt(iva),168,y+4,'right');
+        doc.setTextColor(...C.text1);doc.setFont('helvetica','bold');
+        doc.text(fmt(total),196,y+4,'right');
+      } else {
+        doc.setTextColor(...C.text3);doc.setFontSize(8);doc.setFont('helvetica','normal');
+        doc.text('—',148,y+4,'right');doc.text('—',168,y+4,'right');doc.text('—',196,y+4,'right');
+      }
+      y+=10;
+      // Light separator
+      doc.setDrawColor(...C.line);doc.setLineWidth(0.15);doc.line(14,y-1,196,y-1);
     });
-    // Resumen con IVA
-    y+=4;
-    doc.setFillColor(20,25,35);doc.roundedRect(100,y,96,60,3,3,"F");
+
+    y+=8;
+    // Summary box
+    doc.setFillColor(...C.dark);
+    doc.rect(110,y,86,52,'F');
+    doc.setFillColor(...C.copper);doc.rect(110,y,0.6,52,'F');
+
     const ivaTotal=Math.round(e.montoBase*0.16);
-    const subtotalConIva=e.montoBase+ivaTotal;
-    doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(92,100,120);
-    doc.text("Subtotal:",104,y+9);doc.setTextColor(200,200,200);doc.text(fmt(e.montoBase),194,y+9,"right");
-    doc.setTextColor(92,100,120);doc.text("IVA (16%):",104,y+17);doc.setTextColor(200,200,200);doc.text(fmt(ivaTotal),194,y+17,"right");
-    doc.setDrawColor(50,60,80);doc.line(104,y+21,194,y+21);
-    doc.setTextColor(92,100,120);doc.text("Total c/IVA:",104,y+28);doc.setTextColor(200,200,200);doc.text(fmt(subtotalConIva),194,y+28,"right");
-    doc.setTextColor(92,100,120);doc.text(`Anticipo (${o.pctAnticipo}%):`,104,y+36);
-    doc.setTextColor(224,124,90);doc.text("- "+fmt(e.descAnticipo),194,y+36,"right");
-    doc.setDrawColor(50,60,80);doc.line(104,y+40,194,y+40);
-    doc.setFontSize(11);doc.setFont("helvetica","bold");
-    doc.setTextColor(tipo==="int"?[224,124,90]:[78,205,196]);
-    doc.text(`Total: ${fmt(e.montoFinal)}`,194,y+32,"right");
+    const conIva=e.montoBase+ivaTotal;
+    let ry=y+10;
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...C.text2);
+    doc.text('Subtotal',114,ry);doc.setTextColor(...C.text1);doc.text(fmt(e.montoBase),194,ry,'right');ry+=8;
+    doc.text('IVA 16%',114,ry);doc.text(fmt(ivaTotal),194,ry,'right');ry+=6;
+    doc.setDrawColor(...C.line);doc.line(114,ry,194,ry);ry+=6;
+    doc.text('Total c/IVA',114,ry);doc.text(fmt(conIva),194,ry,'right');ry+=8;
+
+    if(e.descAnticipo>0){
+      doc.setTextColor(...C.text2);doc.text('Anticipo ('+(o.pctAnticipo||0)+'%)',114,ry);
+      doc.setTextColor(...C.copper);doc.text('- '+fmt(e.descAnticipo),194,ry,'right');ry+=8;
+    }
+    if(e.descRetencion>0){
+      doc.setTextColor(...C.text2);doc.text('Retención ('+(e.pctRetencion||0)+'%)',114,ry);
+      doc.setTextColor(...C.copper);doc.text('- '+fmt(e.descRetencion),194,ry,'right');ry+=8;
+    }
+    doc.setDrawColor(...C.copper);doc.setLineWidth(0.4);doc.line(114,ry,194,ry);ry+=7;
+    doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(...C.copper);
+    doc.text(fmt(e.montoFinal),194,ry,'right');
+    doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...C.text2);
+    doc.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),114,ry);
   } else if(tipo==="extras"){
     doc.setFontSize(15);doc.setFont("helvetica","bold");doc.setTextColor(15,17,23);doc.text("Reporte de Conceptos Extraordinarios",14,y);y+=10;
     doc.setFontSize(10);doc.setFont("helvetica","normal");doc.setTextColor(92,100,120);
@@ -3089,8 +3192,8 @@ window.genPDF=function(obraId,estId,tipo){
     y+=4;doc.setFont("helvetica","bold");doc.setTextColor(15,17,23);doc.setFontSize(11);
     doc.text("Aumento total al contrato: "+fmt(total),14,y);}
   }
-  doc.setFontSize(8);doc.setTextColor(92,100,120);doc.setFont("helvetica","normal");
-  doc.text(`Generado por Grupo Lateral — ${new Date().toLocaleDateString("es-MX")}`,14,285);
+  const totalPgs=doc.internal.getNumberOfPages();
+  for(let pg=1;pg<=totalPgs;pg++){doc.setPage(pg);drawFooter(pg,totalPgs);}
   const nombres={avance:"reporte-avance",ext:"estimacion-ext",int:"estimacion-int",extras:"conceptos-extra"};
   doc.save(nombres[tipo]+"-"+o.nombre.replace(/[^a-zA-Z0-9]/g,"-")+".pdf");
 };
