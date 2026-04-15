@@ -1539,8 +1539,10 @@ function pgEstInternas(main){
   const pend=OBRAS.flatMap(o=>o.estimacionesInt.filter(e=>e.status==="pendiente").map(e=>({...e,obra:o})));
   const hist=OBRAS.flatMap(o=>o.estimacionesInt.filter(e=>e.status!=="pendiente").map(e=>({...e,obra:o})));
   main.innerHTML=`
-  <div class="page-title">Estimaciones internas</div>
-  <div class="page-sub">Pagos a proveedores · Solo visible para admin y supervisores</div>
+  <div class="sec-hdr">
+    <div><div class="page-title">Estimaciones internas</div><div class="page-sub">Pagos a proveedores</div></div>
+    ${SESSION.rol==="admin"?`<button class="btn btn-primary" onclick="abrirNuevaEst('int')">+ Nueva estimación</button>`:""}
+  </div>
   ${pend.length?`<div class="alert alert-warn mb14">⏰ ${pend.length} estimación(es) pendiente(s) de aprobación</div>
   <div class="sec-title mb10">Pendientes</div>${pend.map(e=>renderEstCard(e,true,"int")).join("")}<div class="divider"></div>`:""}
   <div class="sec-title mb10">Historial</div>
@@ -1551,13 +1553,93 @@ function pgEstExternas(main){
   const pend=OBRAS.flatMap(o=>o.estimacionesExt.filter(e=>e.status==="pendiente_admin").map(e=>({...e,obra:o})));
   const resto=OBRAS.flatMap(o=>o.estimacionesExt.filter(e=>e.status!=="pendiente_admin").map(e=>({...e,obra:o})));
   main.innerHTML=`
-  <div class="page-title">Estimaciones externas</div>
-  <div class="page-sub">Cobros al cliente · Flujo: Residente → Admin → Cliente</div>
+  <div class="sec-hdr">
+    <div><div class="page-title">Estimaciones externas</div><div class="page-sub">Cobros al cliente</div></div>
+    ${SESSION.rol==="admin"?`<button class="btn btn-primary" onclick="abrirNuevaEst('ext')">+ Nueva estimación</button>`:""}
+  </div>
   ${pend.length?`<div class="alert alert-info mb14">🔍 ${pend.length} estimación(es) pendientes de tu aprobación</div>
   <div class="sec-title mb10">Pendientes de tu aprobación</div>${pend.map(e=>renderEstCard(e,true,"ext")).join("")}<div class="divider"></div>`:""}
   <div class="sec-title mb10">Historial</div>
   ${resto.map(e=>renderEstCard(e,false,"ext")).join("")}`;
 }
+
+window.abrirNuevaEst = function(tipo){
+  var obraId = document.getElementById("ne-obra").value;
+  // Reset form
+  document.getElementById("ne-tipo").value = tipo;
+  document.getElementById("ne-result").innerHTML = "";
+  document.getElementById("ne-modal-title").textContent = tipo==="ext" ? "Nueva estimación externa" : "Nueva estimación interna";
+
+  // Populate obra selector
+  var sel = document.getElementById("ne-obra");
+  sel.innerHTML = OBRAS.filter(function(o){return obraCompleta(o);}).map(function(o){
+    return '<option value="'+o.id+'">'+o.nombre+'</option>';
+  }).join("");
+
+  renderNEPartidas();
+  openM("m-nueva-est");
+};
+
+window.renderNEPartidas = function(){
+  var obraId = parseInt(document.getElementById("ne-obra").value);
+  var tipo = document.getElementById("ne-tipo").value;
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var pres = tipo==="int" ? (o.presupuestoInterno||o.presupuestoExterno) : o.presupuestoExterno;
+  var html = "";
+  o.partidas.forEach(function(p, i){
+    var importeP = p.conceptos.reduce(function(s,c){return s+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
+    if(!importeP) importeP = pres / o.partidas.length;
+    html += '<div class="flex aic gap10 mb8">';
+    html += '<span class="fs12" style="flex:1;color:var(--text2)">'+p.nombre+'</span>';
+    html += '<input type="number" min="0" max="100" value="0" id="ne-pct-'+i+'" style="width:70px;background:var(--bg2);border:1px solid var(--border);border-radius:0;padding:6px 8px;color:var(--text);font-size:12px;text-align:right" placeholder="0">';
+    html += '<span class="fs12 c3">%</span>';
+    html += '</div>';
+  });
+  document.getElementById("ne-partidas").innerHTML = html;
+};
+
+window.guardarNuevaEst = function(){
+  var obraId = parseInt(document.getElementById("ne-obra").value);
+  var tipo = document.getElementById("ne-tipo").value;
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o){alert("Selecciona una obra");return;}
+
+  var pres = tipo==="int" ? (o.presupuestoInterno||o.presupuestoExterno) : o.presupuestoExterno;
+  var pctPartidas = o.partidas.map(function(p,i){
+    return parseFloat(document.getElementById("ne-pct-"+i).value)||0;
+  });
+
+  var montoBase = o.partidas.reduce(function(s,p,i){
+    var importeP = p.conceptos.reduce(function(ss,c){return ss+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
+    if(!importeP) importeP = pres / o.partidas.length;
+    return s + Math.round(importeP * (pctPartidas[i]/100));
+  }, 0);
+
+  var anticipo = o.anticipo||0;
+  var descAnticipo = tipo==="ext" ? Math.round(anticipo * (montoBase / (pres||1))) : 0;
+  var montoFinal = Math.round(montoBase*1.16) - descAnticipo;
+
+  var arr = tipo==="int" ? o.estimacionesInt : o.estimacionesExt;
+  var num = "EST-"+(tipo==="int"?"INT":"EXT")+"-"+String((arr.length||0)+1).padStart(3,"0");
+
+  var est = {
+    id: Date.now(),
+    num: num,
+    fecha: new Date().toISOString().split("T")[0],
+    pctPartidas: pctPartidas,
+    montoBase: montoBase,
+    descAnticipo: descAnticipo,
+    montoFinal: montoFinal,
+    status: tipo==="int" ? "pendiente" : "pendiente_admin",
+    creadoPor: SESSION.user
+  };
+
+  arr.push(est);
+  if(window.autoGuardar) window.autoGuardar();
+  closeM("m-nueva-est");
+  showPage(tipo==="int" ? "est-internas" : "est-externas");
+};
 
 function renderEstCard(e,showActions,tipo){
   const pctsTxt=e.pctPartidas.map((p,i)=>`${e.obra.partidas[i]?.nombre||"P"+(i+1)}: ${p}%`).join(" · ");
@@ -3154,6 +3236,28 @@ window.genPDF=function(obraId,estId,tipo){
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeM('m-editar-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarEdicionPago()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nueva Estimación -->
+<div class="modal-overlay" id="m-nueva-est" style="align-items:flex-start;padding:20px;overflow-y:auto">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title" id="ne-modal-title">Nueva estimación</div>
+    <input type="hidden" id="ne-tipo">
+    <div class="mb14">
+      <label class="form-label">Obra</label>
+      <select class="form-input" id="ne-obra" onchange="renderNEPartidas()"></select>
+    </div>
+    <div class="mb14">
+      <label class="form-label">% de avance por partida</label>
+      <div class="fs12 c3 mb10">Ingresa el porcentaje de avance de esta estimación para cada partida.</div>
+      <div id="ne-partidas"></div>
+    </div>
+    <div id="ne-result" class="mb10"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeM('m-nueva-est')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarNuevaEst()">Crear estimación</button>
     </div>
   </div>
 </div>
