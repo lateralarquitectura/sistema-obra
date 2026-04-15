@@ -537,13 +537,26 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 </div>
 
 <!-- MODAL: Actualizar Presupuesto -->
-<div class="modal-overlay" id="m-upd-pres">
-  <div class="modal" style="max-width:680px">
+<div class="modal-overlay" id="m-upd-pres" style="align-items:flex-start;padding:20px;overflow-y:auto">
+  <div class="modal" style="max-width:640px">
     <div class="modal-title" id="m-upd-title">Actualizar presupuesto</div>
-    <div id="m-upd-body"></div>
+    <div id="upd-current" style="font-size:12px;color:var(--text3);margin-bottom:16px"></div>
+    <div class="alert alert-warn mb14" style="font-size:12px">
+      Las estimaciones pendientes se congelarán. Las nuevas usarán este presupuesto.
+    </div>
+    <div class="mb14">
+      <label class="form-label">Nota de actualización</label>
+      <input class="form-input" id="upd-nota" placeholder="Ej. Versión con precios actualizados abril 2026">
+    </div>
+    <div class="mb14">
+      <label class="form-label">Partidas — formato <code style="background:var(--bg3);padding:2px 6px;border-radius:2px;font-size:11px">CLAVE,Nombre,importeExt,importeInt</code></label>
+      <div class="fs12 c3 mb8">Pega todas las partidas. El sistema reemplazará las partidas actuales con estas nuevas.</div>
+      <textarea id="upd-import-text" style="width:100%;height:200px;background:var(--bg2);border:1px solid var(--border);border-radius:0;padding:10px;color:var(--text);font-size:12px;font-family:monospace;outline:none;resize:vertical" placeholder="PRE,Preliminares,0,0&#10;DEM,Demoliciones,376333.07,324983.11&#10;HER,Herrería y Estructura,74405.24,59054.50"></textarea>
+    </div>
+    <div id="upd-result" class="mb10"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeM('m-upd-pres')">Cancelar</button>
-      <button class="btn btn-amber" onclick="confirmarActualizacion()">Confirmar actualización</button>
+      <button class="btn btn-primary" onclick="confirmarActualizacion()">✓ Confirmar actualización</button>
     </div>
   </div>
 </div>
@@ -1068,110 +1081,98 @@ function actualizarObraIdUsuarios(obraId, residente, clienteAccount){
 
 // ══════ ACTUALIZAR PRESUPUESTO ══════
 function abrirActualizarPres(obraId,tipo){
-  UPD_CTX={obraId,tipo,uploads:{},newPartidas:[]};
+  UPD_CTX={obraId,tipo,uploads:{}};
   const o=OBRAS.find(x=>x.id===obraId);
   document.getElementById("m-upd-title").textContent=`Actualizar presupuesto ${tipo==="ext"?"externo":"interno"} — ${o.nombre}`;
-  document.getElementById("m-upd-body").innerHTML=`
-    <div class="alert alert-warn mb14">
-      <strong>Importante:</strong> Las estimaciones ya aprobadas se congelan con sus montos actuales. Las estimaciones futuras usarán el nuevo presupuesto.
-    </div>
-    <div class="mb14">
-      <label class="form-label">Subir nueva versión del presupuesto</label>
-      <div class="upload-zone" id="uz-upd">
-        <input type="file" accept="image/*,application/pdf" onchange="handleUpdUpload(this)">
-        <div id="uz-upd-ph">
-          <div style="font-size:28px;margin-bottom:8px">📄</div>
-          <div class="fs12 c3">Arrastra o haz clic para subir</div>
-        </div>
-        <img id="uz-upd-img" class="upload-preview-img" style="display:none">
-        <div id="uz-upd-name" class="upload-filename"></div>
-      </div>
-    </div>
-    <div class="mb14">
-      <label class="form-label">Nota sobre esta actualización</label>
-      <input class="form-input" id="upd-nota" placeholder="Ej. Ajuste de precios unitarios Q1 2026">
-    </div>
-    <div class="mb14">
-      <label class="form-label">¿Hay partidas o conceptos nuevos?</label>
-      <select class="form-input" id="upd-has-new" onchange="toggleNuevosConceptos(this.value)">
-        <option value="0">No — solo cambiaron montos o precios</option>
-        <option value="1">Sí — hay conceptos nuevos que agregar</option>
-      </select>
-    </div>
-    <div id="nuevos-conceptos-wrap" style="display:none">
-      <div class="alert alert-info mb10">Los conceptos nuevos se registrarán automáticamente como conceptos extraordinarios.</div>
-      <div id="nuevos-conceptos-list"></div>
-      <button class="btn btn-ghost btn-sm" onclick="addNuevoConcepto()">+ Agregar concepto nuevo</button>
-    </div>`;
+  document.getElementById("upd-nota").value="";
+  document.getElementById("upd-import-text").value="";
+  document.getElementById("upd-result").innerHTML="";
+  // Show current total
+  var curr = tipo==="ext" ? o.presupuestoExterno : o.presupuestoInterno;
+  var fmtM = function(n){return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",minimumFractionDigits:0}).format(n||0);};
+  document.getElementById("upd-current").textContent = curr ? "Presupuesto actual: "+fmtM(curr) : "Sin presupuesto cargado";
   openM("m-upd-pres");
 }
 
-window.handleUpdUpload=function(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    UPD_CTX.uploads.data=e.target.result;UPD_CTX.uploads.name=file.name;
-    const zone=document.getElementById("uz-upd");zone.classList.add("has-file");
-    const img=document.getElementById("uz-upd-img");
-    if(file.type!=="application/pdf"){img.src=e.target.result;img.style.display="block";}
-    document.getElementById("uz-upd-ph").style.display="none";
-    document.getElementById("uz-upd-name").textContent="✓ "+file.name;
-  };
-  reader.readAsDataURL(file);
-};
-
-window.toggleNuevosConceptos=function(val){
-  document.getElementById("nuevos-conceptos-wrap").style.display=val==="1"?"block":"none";
-};
-
-window.addNuevoConcepto=function(){
-  const idx=UPD_CTX.newPartidas.length;
-  UPD_CTX.newPartidas.push({concepto:"",costo:0});
-  const list=document.getElementById("nuevos-conceptos-list");
-  const div=document.createElement("div");
-  div.className="g2 mb10";
-  div.innerHTML=`
-    <input class="form-input" placeholder="Descripción del concepto nuevo" oninput="UPD_CTX.newPartidas[${idx}].concepto=this.value">
-    <input class="form-input" type="number" placeholder="Costo MXN" oninput="UPD_CTX.newPartidas[${idx}].costo=parseFloat(this.value)||0">`;
-  list.appendChild(div);
-};
-
 window.confirmarActualizacion=function(){
   const o=OBRAS.find(x=>x.id===UPD_CTX.obraId);
-  if(!UPD_CTX.uploads.data){alert("Por favor sube el nuevo presupuesto.");return;}
+  if(!o) return;
+  const tipo=UPD_CTX.tipo;
   const nota=document.getElementById("upd-nota").value||"Actualización de presupuesto";
-  const hasNew=document.getElementById("upd-has-new").value==="1";
+  const txt=document.getElementById("upd-import-text").value.trim();
+  const res=document.getElementById("upd-result");
 
-  // Actualizar imagen
-  if(UPD_CTX.tipo==="ext")o.imgPresExt=UPD_CTX.uploads.data;
-  else o.imgPresInt=UPD_CTX.uploads.data;
+  if(!txt){alert("Pega el texto con las partidas");return;}
 
-  // Registrar nueva versión
-  const newVer=(o.presVersions?.length||0)+1;
-  if(!o.presVersions)o.presVersions=[];
-  o.presVersions.push({version:newVer,fecha:new Date().toISOString().split("T")[0],tipo:UPD_CTX.tipo,nota});
+  var lineas=txt.split("\n").filter(function(l){return l.trim();});
+  var nuevasPartidas=[];
+  var totalNuevo=0;
+  var errores=[];
 
-  // Congelar estimaciones pendientes (marcarlas con versión anterior)
-  const arrEst=UPD_CTX.tipo==="ext"?o.estimacionesExt:o.estimacionesInt;
-  arrEst.filter(e=>e.status==="pendiente"||e.status==="pendiente_admin").forEach(e=>e.congelada=true);
+  lineas.forEach(function(linea,idx){
+    var partes=linea.split(",").map(function(p){return p.trim();});
+    if(partes.length<2){errores.push("Línea "+(idx+1)+": formato incorrecto");return;}
+    var clave=partes[0];
+    var nombre=partes[1];
+    var importeExt=parseFloat(partes[2])||0;
+    var importeInt=parseFloat(partes[3])||0;
+    if(!nombre){errores.push("Línea "+(idx+1)+": nombre vacío");return;}
+    totalNuevo+=importeExt;
+    nuevasPartidas.push({
+      id:Date.now()+Math.random(),
+      nombre:nombre,
+      conceptos:[{
+        clave:clave,concepto:nombre,unidad:"LOTE",cantidad:1,
+        precioUnit:importeExt,importe:importeExt,
+        precioUnitInt:importeInt,importeInt:importeInt
+      }],
+      pctInt:0,pctExt:0
+    });
+  });
 
-  // Agregar conceptos nuevos como extras
-  if(hasNew){
-    UPD_CTX.newPartidas.filter(p=>p.concepto).forEach(p=>{
-      o.extras.push({
-        id:o.extras.length+1,
-        desc:p.concepto,
-        costo:p.costo,
-        fecha:new Date().toISOString().split("T")[0],
-        notas:"Concepto nuevo detectado en actualización de presupuesto v"+newVer,
-        visible:true,
-        esNuevoConcepto:true,
+  if(errores.length>0 && nuevasPartidas.length===0){
+    res.innerHTML='<div style="color:var(--coral);font-size:12px">'+errores.join("<br>")+'</div>';
+    return;
+  }
+
+  // Update obra
+  if(tipo==="ext"){
+    o.presupuestoExterno=totalNuevo;
+    o.partidas=nuevasPartidas;
+  } else {
+    o.presupuestoInterno=totalNuevo;
+    // Update internal prices on existing partidas
+    nuevasPartidas.forEach(function(np){
+      var existing=o.partidas.find(function(p){
+        return p.nombre.toLowerCase()===np.nombre.toLowerCase() ||
+               (p.conceptos[0]&&p.conceptos[0].clave===np.conceptos[0].clave);
       });
+      if(existing&&existing.conceptos[0]){
+        existing.conceptos[0].precioUnitInt=np.conceptos[0].precioUnitInt;
+        existing.conceptos[0].importeInt=np.conceptos[0].importeInt;
+      } else {
+        o.partidas.push(np);
+      }
     });
   }
 
+  // Register new version
+  if(!o.presVersions)o.presVersions=[];
+  o.presVersions.push({
+    version:(o.presVersions.length||0)+1,
+    fecha:new Date().toISOString().split("T")[0],
+    tipo:tipo,nota:nota,
+    total:totalNuevo
+  });
+
+  // Freeze pending estimaciones
+  var arrEst=tipo==="ext"?o.estimacionesExt:o.estimacionesInt;
+  (arrEst||[]).filter(function(e){return e.status==="pendiente"||e.status==="pendiente_admin";})
+    .forEach(function(e){e.congelada=true;});
+
+  if(window.autoGuardar) window.autoGuardar();
   closeM("m-upd-pres");
-  buildNav();showPage("presupuestos");
+  buildNav();showPage("obras");
 };
 
 // ══════ ADMIN PAGES ══════
@@ -1478,10 +1479,13 @@ window.guardarEdicionObra=function(){
   const o=OBRAS.find(x=>x.id===obraId);if(!o)return;
   o.nombre=document.getElementById('eo-nombre').value||o.nombre;
   o.cliente=document.getElementById('eo-cliente').value||o.cliente;
-  o.presupuestoExterno=parseFloat(document.getElementById('eo-pext').value)||o.presupuestoExterno;
-  o.presupuestoInterno=parseFloat(document.getElementById('eo-pint').value)||o.presupuestoInterno;
-  o.pctAnticipo=parseFloat(document.getElementById('eo-pctanticipo').value)||o.pctAnticipo;
-  o.anticipo=Math.round((o.presupuestoExterno||0)*(o.pctAnticipo/100));
+  var _pext=document.getElementById('eo-pext').value;
+  var _pint=document.getElementById('eo-pint').value;
+  var _pct=document.getElementById('eo-pctanticipo').value;
+  if(_pext!=='') o.presupuestoExterno=parseFloat(_pext)||0;
+  if(_pint!=='') o.presupuestoInterno=parseFloat(_pint)||0;
+  if(_pct!=='') o.pctAnticipo=parseFloat(_pct)||0;
+  o.anticipo=Math.round((o.presupuestoExterno||0)*((o.pctAnticipo||0)/100));
   o.fechaInicio=document.getElementById('eo-fecha').value||o.fechaInicio;
   o.residente=document.getElementById('eo-residente').value;
   o.clienteAccount=document.getElementById('eo-cliaccount').value;
