@@ -1467,6 +1467,7 @@ window.abrirEditarObra=function(obraId){
   var elEdit=document.getElementById('anticipo-calc-edit');
   if(elEdit&&o.anticipo) elEdit.textContent='Anticipo actual: '+new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",minimumFractionDigits:0}).format(o.anticipo);
   document.getElementById('eo-fecha').value=o.fechaInicio||'';
+  document.getElementById('eo-retencion').value=o.pctRetencion||'';
   const resSelect=document.getElementById('eo-residente');
   resSelect.innerHTML=USERS.filter(u=>u.rol==='residente').map(u=>`<option value="${u.u}" ${u.u===o.residente?'selected':''}>${u.nombre}</option>`).join('');
   const cliSelect=document.getElementById('eo-cliaccount');
@@ -1487,6 +1488,8 @@ window.guardarEdicionObra=function(){
   if(_pct!=='') o.pctAnticipo=parseFloat(_pct)||0;
   o.anticipo=Math.round((o.presupuestoExterno||0)*((o.pctAnticipo||0)/100));
   o.fechaInicio=document.getElementById('eo-fecha').value||o.fechaInicio;
+  var _ret=document.getElementById('eo-retencion').value;
+  if(_ret!=='') o.pctRetencion=parseFloat(_ret)||0;
   o.residente=document.getElementById('eo-residente').value;
   o.clienteAccount=document.getElementById('eo-cliaccount').value;
   // Actualizar obraId del residente y cliente asignados
@@ -1618,7 +1621,9 @@ window.guardarNuevaEst = function(){
 
   var anticipo = o.anticipo||0;
   var descAnticipo = tipo==="ext" ? Math.round(anticipo * (montoBase / (pres||1))) : 0;
-  var montoFinal = Math.round(montoBase*1.16) - descAnticipo;
+  var pctRet = o.pctRetencion||0;
+  var descRetencion = tipo==="ext" ? Math.round(montoBase*1.16 * (pctRet/100)) : 0;
+  var montoFinal = Math.round(montoBase*1.16) - descAnticipo - descRetencion;
 
   var arr = tipo==="int" ? o.estimacionesInt : o.estimacionesExt;
   var num = "EST-"+(tipo==="int"?"INT":"EXT")+"-"+String((arr.length||0)+1).padStart(3,"0");
@@ -1630,6 +1635,8 @@ window.guardarNuevaEst = function(){
     pctPartidas: pctPartidas,
     montoBase: montoBase,
     descAnticipo: descAnticipo,
+    descRetencion: descRetencion,
+    pctRetencion: pctRet,
     montoFinal: montoFinal,
     status: tipo==="int" ? "pendiente" : "pendiente_admin",
     creadoPor: SESSION.user
@@ -1670,7 +1677,8 @@ function renderEstCard(e,showActions,tipo){
         <div class="desglose-row"><span>Subtotal</span><span>${fmt(e.montoBase)}</span></div>
         <div class="desglose-row"><span>IVA 16%</span><span>${fmt(Math.round(e.montoBase*0.16))}</span></div>
         <div class="desglose-row"><span>Total c/IVA</span><span>${fmt(Math.round(e.montoBase*1.16))}</span></div>
-        <div class="desglose-row neg"><span>Anticipo (${e.obra.pctAnticipo}%)</span><span>- ${fmt(e.descAnticipo)}</span></div>
+        <div class="desglose-row neg"><span>Anticipo (${e.obra.pctAnticipo||0}%)</span><span>- ${fmt(e.descAnticipo||0)}</span></div>
+        ${(e.descRetencion&&e.descRetencion>0)?`<div class="desglose-row neg"><span>Retención (${e.pctRetencion||0}%)</span><span>- ${fmt(e.descRetencion)}</span></div>`:``}
         <div class="desglose-row total-row"><span>Total a ${tipo==="int"?"pagar":"cobrar"}</span><span>${fmt(e.montoFinal)}</span></div>
       </div>
     </div>
@@ -3105,6 +3113,7 @@ window.genPDF=function(obraId,estId,tipo){
         <div class="fs11 c3 mt6" id="anticipo-calc-edit">El monto se calcula del presupuesto externo</div>
       </div>
       <div><label class="form-label">Fecha de inicio</label><input class="form-input" type="date" id="eo-fecha"></div>
+      <div><label class="form-label">Retención (%)</label><input class="form-input" type="number" id="eo-retencion" placeholder="0" min="0" max="100"><div class="fs11 c3 mt4">Se descuenta de cada estimación externa</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeM('m-editar-obra')">Cancelar</button>
