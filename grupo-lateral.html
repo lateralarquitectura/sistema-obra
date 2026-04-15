@@ -3028,10 +3028,15 @@ window.genPDF=function(obraId,estId,tipo){
   function drawHeader(){
     doc.setFillColor(...C.black);
     doc.rect(0,0,210,34,'F');
-    try{doc.addImage(LOGO,'JPEG',10,8,60,16);}catch(e){
-      doc.setTextColor(...C.copper);doc.setFontSize(13);doc.setFont('helvetica','bold');
-      doc.text('GRUPO LATERAL',12,20);
-    }
+    // Logo as text fallback — always safe
+    doc.setTextColor(...C.white);
+    doc.setFontSize(13);
+    doc.setFont('helvetica','bold');
+    doc.text('GRUPO LATERAL',12,18);
+    doc.setFontSize(6);
+    doc.setFont('helvetica','normal');
+    doc.setTextColor(...C.text2);
+    doc.text('ARQUITECTURA Y CONSTRUCCIÓN',12,25);
     doc.setFillColor(...C.copper);
     doc.rect(0,34,210,0.5,'F');
   }
