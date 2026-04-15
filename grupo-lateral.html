@@ -3003,6 +3003,7 @@ window.descargarCSV=function(obraId,estId){
 
 // ══════ PDF ══════
 window.genPDF=function(obraId,estId,tipo){
+  try {
   if(!window.jspdf){alert('Error: librería PDF no cargada. Verifica tu conexión a internet.');return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();
@@ -3226,6 +3227,7 @@ window.genPDF=function(obraId,estId,tipo){
   for(let pg=1;pg<=totalPgs;pg++){doc.setPage(pg);drawFooter(pg,totalPgs);}
   const nombres={avance:"reporte-avance",ext:"estimacion-ext",int:"estimacion-int",extras:"conceptos-extra"};
   doc.save(nombres[tipo]+"-"+o.nombre.replace(/[^a-zA-Z0-9]/g,"-")+".pdf");
+  } catch(err){ alert("Error al generar PDF: "+err.message); console.error(err); }
 };
 </script>
 
