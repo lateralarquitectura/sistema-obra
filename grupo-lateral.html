@@ -3143,7 +3143,7 @@ window.genPDF=function(obraId,estId,tipo){
       // C6 % esta:    right=228  (8mm)
       // C7 % acum:    right=243  (15mm)
       // C8 Saldo:     right=283  (40mm)
-      var c1=ML+2, c2=115, c3=148, c4=180, c5x=185, c5w=40, c6=230, c7=255, c8=PW-MR;
+      var c1=ML+2, c2=115, c3=148, c4=180, c5x=184, c5w=32, c6=228, c7=252, c8=PW-MR;
 
       // Encabezado tabla
       doc.setFillColor(240,238,235);doc.rect(ML,y,CW,7,'F');
@@ -3171,7 +3171,7 @@ window.genPDF=function(obraId,estId,tipo){
           doc.text('EST.%',c6,y+5,'right');doc.text('ACUM.%',c7,y+5,'right');doc.text('SALDO',c8,y+5,'right');
           y+=9;
         }
-        var rowH=11;
+        var rowH=12;
         if(fi%2===0){doc.setFillColor(252,251,250);doc.rect(ML,y,CW,rowH,'F');}
 
         // C1: Nombre
