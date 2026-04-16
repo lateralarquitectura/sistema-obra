@@ -3506,4 +3506,182 @@ window.genPDF=function(obraId,estId,tipo){
   </div>
 </div>
 </body>
-</html>
+</html    } else if(tipo==="ext"||tipo==="int"){
+      if(!e){alert('Estimación no encontrada');return;}
+
+      // ── Pre-calculate partida data ──
+      var filas=[];
+      var totalPresup=0,totalEstaEst=0,totalAcumAnt=0,totalAcum=0;
+      o.partidas.forEach(function(p,i){
+        var presP=p.conceptos.reduce(function(s,c){return s+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
+        if(!presP)presP=pres/o.partidas.length;
+        var arrPrev=tipo==="int"?o.estimacionesInt:o.estimacionesExt;
+        var acumAnt=0;
+        (arrPrev||[]).forEach(function(est){
+          if(est.id!==e.id&&(est.status==="aprobada"||est.status==="aprobada_admin"||est.aprobadoCliente==="aprobada")){
+            var pp=est.pctPartidas&&est.pctPartidas[i]?est.pctPartidas[i]:0;
+            acumAnt+=Math.round(presP*(pp/100));
+          }
+        });
+        var pct=e.pctPartidas&&e.pctPartidas[i]?e.pctPartidas[i]:0;
+        var estaEst=Math.round(presP*(pct/100));
+        var acumTotal=acumAnt+estaEst;
+        totalPresup+=presP;totalEstaEst+=estaEst;totalAcumAnt+=acumAnt;totalAcum+=acumTotal;
+        filas.push({nombre:p.nombre,presP:presP,acumAnt:acumAnt,pct:pct,estaEst:estaEst,acumTotal:acumTotal,saldo:presP-acumTotal});
+      });
+
+      // ── Usamos página en blanco con acento cobre ──
+      // Reset to white background
+      doc.setFillColor(255,255,255);doc.rect(0,34,210,263,'F');
+
+      // ── TÍTULO ──
+      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
+      doc.text(tipo==="int"?"ESTIMACIÓN INTERNA":"ESTIMACIÓN EXTERNA",14,y);y+=7;
+      doc.setFontSize(17);doc.setFont('helvetica','bold');doc.setTextColor(20,20,20);
+      var oNom=o.nombre.length>38?o.nombre.substring(0,37)+'…':o.nombre;
+      doc.text(oNom,14,y);y+=8;
+      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(150,145,140);
+      doc.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,14,y);y+=10;
+
+      // ── RESUMEN 3 BLOQUES (fondo gris muy claro) ──
+      var bW=57,bGap=3,bY=y;
+      var bLabels=['MONTO ESTA ESTIMACIÓN','ACUMULADO ANTERIOR','SALDO POR ESTIMAR'];
+      var bVals=[totalEstaEst,totalAcumAnt,totalPresup-totalAcum];
+      var bSub=['sin IVA','estimaciones aprobadas','del presupuesto total'];
+      for(var bi=0;bi<3;bi++){
+        var bx=14+bi*(bW+bGap);
+        doc.setFillColor(247,247,245);doc.rect(bx,bY,bW,20,'F');
+        if(bi===0){doc.setFillColor(184,135,74);doc.rect(bx,bY,bW,1.5,'F');}
+        doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
+        doc.text(bLabels[bi],bx+4,bY+7);
+        doc.setFontSize(bi===0?12:10);doc.setFont('helvetica','bold');
+        doc.setTextColor(bi===0?184:60,bi===0?135:60,bi===0?74:60);
+        doc.text(fmt(bVals[bi]),bx+bW-4,bY+15,'right');
+        doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(180,175,170);
+        doc.text(bSub[bi],bx+4,bY+19);
+      }
+      // Presup total — right side
+      var bx3=14+3*(bW+bGap);
+      doc.setFillColor(247,247,245);doc.rect(bx3,bY,bW-2,20,'F');
+      doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
+      doc.text('PRESUPUESTO TOTAL',bx3+4,bY+7);
+      doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(60,60,60);
+      doc.text(fmt(totalPresup),bx3+bW-6,bY+15,'right');
+      doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(180,175,170);
+      doc.text('contratado',bx3+4,bY+19);
+      y+=28;
+
+      // ── TABLA ──
+      // Header row — fondo muy sutil
+      doc.setFillColor(240,238,235);doc.rect(14,y,182,7,'F');
+      doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
+      doc.text('PARTIDA',16,y+5);
+      doc.text('PRESUP.',80,y+5,'right');
+      doc.text('ACUM.ANT.',106,y+5,'right');
+      doc.text('ESTA EST.',132,y+5,'right');
+      doc.text('% / AVANCE ACUM.',175,y+5,'right');
+      doc.text('SALDO',196,y+5,'right');
+      y+=9;
+
+      filas.forEach(function(f,fi){
+        if(y>255){
+          doc.addPage();
+          doc.setFillColor(255,255,255);doc.rect(0,0,210,297,'F');
+          drawHeader(); // reuse header
+          y=46;
+          doc.setFillColor(240,238,235);doc.rect(14,y,182,7,'F');
+          doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
+          doc.text('PARTIDA',16,y+5);doc.text('PRESUP.',80,y+5,'right');
+          doc.text('ACUM.ANT.',106,y+5,'right');doc.text('ESTA EST.',132,y+5,'right');
+          doc.text('% / AVANCE ACUM.',175,y+5,'right');doc.text('SALDO',196,y+5,'right');
+          y+=9;
+        }
+        var rowH=12;
+
+        // ── Partida name (big, dark) ──
+        doc.setFontSize(9);doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
+        doc.setTextColor(f.estaEst>0?20:160,f.estaEst>0?20:155,f.estaEst>0?20:150);
+        var nom=f.nombre.length>22?f.nombre.substring(0,21)+'…':f.nombre;
+        doc.text(nom,16,y+8);
+
+        // ── Presup (secondary, gray) ──
+        doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(170,165,160);
+        doc.text(fmt(f.presP),80,y+8,'right');
+
+        // ── Acum anterior (gray) ──
+        doc.setTextColor(f.acumAnt>0?140:190,f.acumAnt>0?135:185,f.acumAnt>0?130:180);
+        doc.text(f.acumAnt>0?fmt(f.acumAnt):'—',106,y+8,'right');
+
+        // ── ESTA EST: protagonista ──
+        doc.setFontSize(f.estaEst>0?10:8);doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
+        doc.setTextColor(f.estaEst>0?20:190,f.estaEst>0?20:185,f.estaEst>0?20:180);
+        doc.text(f.estaEst>0?fmt(f.estaEst):'—',132,y+8,'right');
+
+        // ── % + mini bar ──
+        var barX=135,barW=30;
+        var pctAcum=f.presP>0?Math.min(100,Math.round(f.acumTotal/f.presP*100)):0;
+        // Background bar
+        doc.setFillColor(230,228,225);doc.rect(barX,y+4.5,barW,2.5,'F');
+        // Filled portion
+        if(pctAcum>0){doc.setFillColor(184,135,74);doc.rect(barX,y+4.5,Math.round(barW*pctAcum/100),2.5,'F');}
+        // Esta est portion overlay (darker copper)
+        var pctEsta=f.presP>0?Math.round(f.estaEst/f.presP*100):0;
+        var startX=f.presP>0?Math.round(barW*Math.min(100,Math.round(f.acumAnt/f.presP*100))/100):0;
+        if(pctEsta>0){doc.setFillColor(140,100,50);doc.rect(barX+startX,y+4.5,Math.round(barW*pctEsta/100),2.5,'F');}
+        // % text
+        doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+        doc.setTextColor(f.pct>0?184:180,f.pct>0?135:175,f.pct>0?74:170);
+        doc.text(f.pct+'%',171,y+8,'right');
+        doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
+        doc.text('('+pctAcum+'% acum)',175,y+8,'right');
+
+        // ── Saldo ──
+        var saldoNeg=f.saldo<0;
+        doc.setFontSize(8);doc.setFont('helvetica','normal');
+        doc.setTextColor(saldoNeg?180:150,saldoNeg?80:145,saldoNeg?74:140);
+        doc.text(fmt(Math.abs(f.saldo))+(saldoNeg?' ↑':''),196,y+8,'right');
+
+        y+=rowH;
+        // Very light separator
+        doc.setDrawColor(230,228,225);doc.setLineWidth(0.3);doc.line(14,y,196,y);
+      });
+
+      // ── TOTALS ROW ──
+      y+=2;
+      doc.setFillColor(240,238,235);doc.rect(14,y,182,9,'F');
+      doc.setFillColor(184,135,74);doc.rect(14,y,2,9,'F');
+      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(60,60,60);
+      doc.text('TOTAL',16,y+6.5);
+      doc.setTextColor(150,145,140);doc.text(fmt(totalPresup),80,y+6.5,'right');
+      doc.setTextColor(140,135,130);doc.text(fmt(totalAcumAnt),106,y+6.5,'right');
+      doc.setTextColor(20,20,20);doc.text(fmt(totalEstaEst),132,y+6.5,'right');
+      doc.setTextColor(150,145,140);doc.text(fmt(totalPresup-totalAcum),196,y+6.5,'right');
+      y+=16;
+
+      // ── RESUMEN FINANCIERO ──
+      if(y>248){doc.addPage();doc.setFillColor(255,255,255);doc.rect(0,0,210,297,'F');drawHeader();y=46;}
+      var ivaT=Math.round(e.montoBase*0.16);
+      var conIva=e.montoBase+ivaT;
+      var bxR=112,bwR=84;
+      var boxH2=9+8+8+(e.descAnticipo>0?8:0)+(e.descRetencion>0?8:0)+14;
+      doc.setFillColor(247,247,245);doc.rect(bxR,y,bwR,boxH2,'F');
+      doc.setFillColor(184,135,74);doc.rect(bxR,y,1.5,boxH2,'F');
+      var ry=y+8;
+      doc.setFontSize(8);doc.setFont('helvetica','normal');
+      doc.setTextColor(160,155,150);doc.text('Subtotal (sin IVA)',bxR+5,ry);
+      doc.setTextColor(60,60,60);doc.text(fmt(e.montoBase),194,ry,'right');ry+=8;
+      doc.setTextColor(160,155,150);doc.text('IVA 16%',bxR+5,ry);
+      doc.setTextColor(60,60,60);doc.text(fmt(ivaT),194,ry,'right');ry+=8;
+      if(e.descAnticipo>0){
+        doc.setTextColor(160,155,150);doc.text('Anticipo ('+(o.pctAnticipo||0)+'%)',bxR+5,ry);
+        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descAnticipo),194,ry,'right');ry+=8;
+      }
+      if(e.descRetencion>0){
+        doc.setTextColor(160,155,150);doc.text('Retención ('+(e.pctRetencion||0)+'%)',bxR+5,ry);
+        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descRetencion),194,ry,'right');ry+=8;
+      }
+      doc.setDrawColor(200,195,190);doc.setLineWidth(0.4);doc.line(bxR+5,ry,194,ry);ry+=8;
+      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
+      doc.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),bxR+5,ry);
+      doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
+      doc.text(fmt(e.montoFinal),194,ry,'right');>
