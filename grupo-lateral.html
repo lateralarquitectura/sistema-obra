@@ -3006,7 +3006,10 @@ window.genPDF=function(obraId,estId,tipo){
   try{
     if(!window.jspdf){alert('jsPDF no cargado');return;}
     const {jsPDF}=window.jspdf;
-    const doc=new jsPDF();
+    var isEst=(tipo==="ext"||tipo==="int");
+    var doc=isEst?new jsPDF({orientation:'landscape',unit:'mm',format:'a4'}):new jsPDF();
+    var PW=isEst?297:210; // page width
+    var PH=isEst?210:297; // page height
     const o=OBRAS.find(x=>x.id===obraId);
     if(!o){alert('Obra no encontrada');return;}
 
@@ -3059,174 +3062,223 @@ window.genPDF=function(obraId,estId,tipo){
     } else if(tipo==="ext"||tipo==="int"){
       if(!e){alert('Estimación no encontrada');return;}
 
-      // ── Pre-calculate all partida data ──
-      var filas = [];
-      var totalPresup=0, totalAcumAnt=0, totalEstaEst=0, totalAcum=0;
+      // ── Use landscape for more space ──
+      var docL = new jsPDF({orientation:'landscape'});
+      // Replace doc with docL for this section
+      var d = docL;
+      // Page is 297 x 210mm
+      var PW=297, PH=210;
+
+      // Colors (softer)
+      var COP=[184,135,74], WHT=[210,206,200], GR1=[140,136,130], GR2=[80,78,75], GR3=[45,43,40], BG=[12,12,12], BG2=[18,18,18], BG3=[24,24,24];
+
+      function hdr(){
+        d.setFillColor(BG[0],BG[1],BG[2]);d.rect(0,0,PW,28,'F');
+        try{d.addImage(LOGO,'JPEG',10,5,70,16);}catch(le){
+          d.setFontSize(12);d.setFont('helvetica','bold');d.setTextColor(WHT[0],WHT[1],WHT[2]);d.text('GRUPO LATERAL',12,16);
+        }
+        d.setFillColor(COP[0],COP[1],COP[2]);d.rect(0,28,PW,0.4,'F');
+      }
+
+      function ftr(pg,tot){
+        d.setFillColor(BG[0],BG[1],BG[2]);d.rect(0,PH-12,PW,12,'F');
+        d.setFillColor(COP[0],COP[1],COP[2]);d.rect(0,PH-12,PW,0.3,'F');
+        d.setFontSize(6.5);d.setFont('helvetica','normal');d.setTextColor(GR2[0],GR2[1],GR2[2]);
+        d.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',14,PH-5);
+        d.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),PW/2,PH-5,'center');
+        d.text('Pág '+pg+'/'+tot,PW-14,PH-5,'right');
+      }
+
+      // ── Pre-calculate ──
+      var filas=[];
+      var totPres=0,totAcumAnt=0,totEst=0,totAcum=0;
       o.partidas.forEach(function(p,i){
         var presP=p.conceptos.reduce(function(s,c){return s+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
         if(!presP)presP=pres/o.partidas.length;
-        // Acumulado de estimaciones anteriores (misma partida, misma obra)
         var arrPrev=tipo==="int"?o.estimacionesInt:o.estimacionesExt;
         var acumAnt=0;
         (arrPrev||[]).forEach(function(est){
-          if(est.id!==e.id && (est.status==="aprobada"||est.status==="aprobada_admin"||est.aprobadoCliente==="aprobada")){
-            var pctPrev=est.pctPartidas&&est.pctPartidas[i]?est.pctPartidas[i]:0;
-            acumAnt+=Math.round(presP*(pctPrev/100));
+          if(est.id!==e.id&&(est.status==="aprobada"||est.status==="aprobada_admin"||est.aprobadoCliente==="aprobada")){
+            var pp=est.pctPartidas&&est.pctPartidas[i]?est.pctPartidas[i]:0;
+            acumAnt+=Math.round(presP*(pp/100));
           }
         });
         var pct=e.pctPartidas&&e.pctPartidas[i]?e.pctPartidas[i]:0;
         var estaEst=Math.round(presP*(pct/100));
-        var acumTotal=acumAnt+estaEst;
-        var saldo=presP-acumTotal;
-        totalPresup+=presP; totalAcumAnt+=acumAnt;
-        totalEstaEst+=estaEst; totalAcum+=acumTotal;
-        filas.push({nombre:p.nombre,presP:presP,acumAnt:acumAnt,pct:pct,estaEst:estaEst,acumTotal:acumTotal,saldo:saldo});
+        var acumTot=acumAnt+estaEst;
+        var saldo=presP-acumTot;
+        totPres+=presP;totAcumAnt+=acumAnt;totEst+=estaEst;totAcum+=acumTot;
+        filas.push({nombre:p.nombre,presP:presP,acumAnt:acumAnt,pct:pct,estaEst:estaEst,acumTot:acumTot,saldo:saldo});
       });
 
-      // ── HEADER INFO ──
-      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
-      doc.text(tipo==="int"?"ESTIMACIÓN INTERNA — PAGO A PROVEEDOR":"ESTIMACIÓN EXTERNA — COBRO A CLIENTE",14,y);y+=8;
-      doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(232,228,222);
-      // Clip long names
-      var oNombre=o.nombre.length>40?o.nombre.substring(0,39)+'…':o.nombre;
-      doc.text(oNombre,14,y);y+=7;
-      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,14,y);y+=10;
-      doc.setFillColor(184,135,74);doc.rect(14,y,182,0.4,'F');y+=8;
+      hdr();
+      var ly=36;
 
-      // ── RESUMEN EJECUTIVO (4 boxes) ──
-      var boxW=42, boxX=14, boxGap=4;
-      var labels=['PRESUP. TOTAL','ACUM. ANTERIOR','ESTA ESTIMACIÓN','SALDO POR ESTIMAR'];
-      var vals=[totalPresup,totalAcumAnt,totalEstaEst,totalPresup-totalAcum];
-      var colors=[[122,117,112],[122,117,112],[184,135,74],[122,117,112]];
+      // ── Title ──
+      d.setFontSize(6.5);d.setFont('helvetica','normal');d.setTextColor(COP[0],COP[1],COP[2]);
+      d.text(tipo==="int"?"ESTIMACIÓN INTERNA — PAGO A PROVEEDOR":"ESTIMACIÓN EXTERNA — COBRO A CLIENTE",14,ly);ly+=7;
+      d.setFontSize(14);d.setFont('helvetica','bold');d.setTextColor(WHT[0],WHT[1],WHT[2]);
+      var oNom=o.nombre.length>50?o.nombre.substring(0,49)+'…':o.nombre;
+      d.text(oNom,14,ly);ly+=6;
+      d.setFontSize(8);d.setFont('helvetica','normal');d.setTextColor(GR1[0],GR1[1],GR1[2]);
+      d.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,14,ly);ly+=8;
+      d.setFillColor(COP[0],COP[1],COP[2]);d.rect(14,ly,PW-28,0.3,'F');ly+=7;
+
+      // ── 4 Summary boxes ──
+      var bW=60,bGap=4,bX=14;
+      var bLabels=['PRESUPUESTO TOTAL','ACUMULADO ANTERIOR','ESTA ESTIMACIÓN','SALDO POR ESTIMAR'];
+      var bVals=[totPres,totAcumAnt,totEst,totPres-totAcum];
       for(var bi=0;bi<4;bi++){
-        var bx=boxX+bi*(boxW+boxGap);
-        doc.setFillColor(20,20,20);doc.rect(bx,y,boxW,18,'F');
-        doc.setFillColor(bi===2?184:36,bi===2?135:36,bi===2?74:36);
-        doc.rect(bx,y,boxW,0.5,'F');
-        doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-        doc.text(labels[bi],bx+3,y+6);
-        doc.setFontSize(9);doc.setFont('helvetica','bold');
-        doc.setTextColor(colors[bi][0],colors[bi][1],colors[bi][2]);
-        var valStr=fmt(vals[bi]);
-        if(valStr.length>10)valStr=fmt(vals[bi],true);
-        doc.text(valStr,bx+boxW-3,y+14,'right');
+        var bx=bX+bi*(bW+bGap);
+        d.setFillColor(BG2[0],BG2[1],BG2[2]);d.rect(bx,ly,bW,16,'F');
+        d.setFillColor(bi===2?COP[0]:GR3[0],bi===2?COP[1]:GR3[1],bi===2?COP[2]:GR3[2]);
+        d.rect(bx,ly,bW,0.4,'F');
+        d.setFontSize(5.5);d.setFont('helvetica','normal');d.setTextColor(GR2[0],GR2[1],GR2[2]);
+        d.text(bLabels[bi],bx+3,ly+6);
+        d.setFontSize(9.5);d.setFont('helvetica','bold');
+        if(bi===2){d.setTextColor(COP[0],COP[1],COP[2]);}else{d.setTextColor(GR1[0],GR1[1],GR1[2]);}
+        d.text(fmt(bVals[bi]),bx+bW-3,ly+13,'right');
       }
-      y+=26;
+      ly+=24;
 
-      // ── TABLE HEADER ──
-      doc.setFillColor(15,15,15);doc.rect(14,y,182,8,'F');
-      doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(122,117,112);
-      doc.text('PARTIDA',16,y+5.5);
-      doc.text('PRESUP.',72,y+5.5,'right');
-      doc.text('ACUM.ANT.',91,y+5.5,'right');
-      doc.text('EST.%',102,y+5.5,'right');
-      doc.text('ESTA EST.',122,y+5.5,'right');
-      doc.text('ACUM.TOTAL',146,y+5.5,'right');
-      doc.text('SALDO',166,y+5.5,'right');
-      // BAR col header
-      doc.text('AVANCE',196,y+5.5,'right');
-      y+=10;
+      // ── Column layout (landscape 297mm) ──
+      // PARTIDA: 14-80 (66)  PRESUP: 82-112 (30)  ACUM.ANT: 114-142 (28)
+      // EST%: 144-158 (14)  ESTA EST: 160-192 (32)  ACUM.TOT: 194-224 (30)
+      // SALDO: 226-254 (28)  BARRA+%: 256-283 (27)
+      var C_NOM=14,C_PRE=112,C_ANT=142,C_PCT=158,C_EST=192,C_ACU=222,C_SAL=250,C_BAR=258,C_END=283;
 
-      // ── TABLE ROWS ──
+      // Table header bg
+      d.setFillColor(BG3[0],BG3[1],BG3[2]);d.rect(14,ly,C_END,7,'F');
+      d.setFontSize(6);d.setFont('helvetica','bold');d.setTextColor(GR2[0],GR2[1],GR2[2]);
+      d.text('PARTIDA',C_NOM+2,ly+5);
+      d.text('PRESUP.',C_PRE,ly+5,'right');
+      d.text('ACUM.ANT.',C_ANT,ly+5,'right');
+      d.text('EST.%',C_PCT,ly+5,'right');
+      d.text('ESTA EST.',C_EST,ly+5,'right');
+      d.text('ACUM.TOT.',C_ACU,ly+5,'right');
+      d.text('SALDO',C_SAL,ly+5,'right');
+      d.text('AVANCE',C_END,ly+5,'right');
+      ly+=9;
+
+      // ── Rows ──
       filas.forEach(function(f,fi){
-        if(y>258){
-          doc.addPage();y=20;
-          // repeat col header on new page
-          doc.setFillColor(15,15,15);doc.rect(14,y,182,8,'F');
-          doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(122,117,112);
-          doc.text('PARTIDA',16,y+5.5);doc.text('PRESUP.',72,y+5.5,'right');
-          doc.text('ACUM.ANT.',91,y+5.5,'right');doc.text('EST.%',102,y+5.5,'right');
-          doc.text('ESTA EST.',122,y+5.5,'right');doc.text('ACUM.TOTAL',146,y+5.5,'right');
-          doc.text('SALDO',166,y+5.5,'right');doc.text('AVANCE',196,y+5.5,'right');
-          y+=10;
+        var rowH=10;
+        if(ly+rowH>PH-16){
+          ftr(d.internal.getNumberOfPages(),d.internal.getNumberOfPages()+1);
+          d.addPage();hdr();ly=36;
+          d.setFillColor(BG3[0],BG3[1],BG3[2]);d.rect(14,ly,C_END,7,'F');
+          d.setFontSize(6);d.setFont('helvetica','bold');d.setTextColor(GR2[0],GR2[1],GR2[2]);
+          d.text('PARTIDA',C_NOM+2,ly+5);d.text('PRESUP.',C_PRE,ly+5,'right');
+          d.text('ACUM.ANT.',C_ANT,ly+5,'right');d.text('EST.%',C_PCT,ly+5,'right');
+          d.text('ESTA EST.',C_EST,ly+5,'right');d.text('ACUM.TOT.',C_ACU,ly+5,'right');
+          d.text('SALDO',C_SAL,ly+5,'right');d.text('AVANCE',C_END,ly+5,'right');
+          ly+=9;
         }
-        var rowH=11;
-        // Alternating row bg
-        if(fi%2===0){doc.setFillColor(14,14,14);doc.rect(14,y,182,rowH,'F');}
+        if(fi%2===0){d.setFillColor(16,16,16);d.rect(14,ly,C_END,rowH,'F');}
 
-        var nombre=f.nombre.length>22?f.nombre.substring(0,21)+'…':f.nombre;
-        doc.setFontSize(8);doc.setFont('helvetica',f.pct>0?'bold':'normal');
-        doc.setTextColor(f.pct>0?232:80,f.pct>0?228:80,f.pct>0?222:80);
-        doc.text(nombre,16,y+7.5);
+        // Partida name
+        var nom=f.nombre.length>26?f.nombre.substring(0,25)+'…':f.nombre;
+        d.setFontSize(7.5);d.setFont('helvetica',f.pct>0?'bold':'normal');
+        d.setTextColor(f.pct>0?WHT[0]:GR3[0],f.pct>0?WHT[1]:GR3[1],f.pct>0?WHT[2]:GR3[2]);
+        d.text(nom,C_NOM+2,ly+7);
 
-        doc.setFontSize(7.5);doc.setFont('helvetica','normal');
-        // Presup total
-        doc.setTextColor(122,117,112);doc.text(fmt(f.presP),72,y+7.5,'right');
-        // Acum anterior
-        doc.setTextColor(f.acumAnt>0?200:61,f.acumAnt>0?200:61,f.acumAnt>0?200:61);
-        doc.text(f.acumAnt>0?fmt(f.acumAnt):'—',91,y+7.5,'right');
-        // Pct esta est
-        doc.setTextColor(f.pct>0?184:61,f.pct>0?135:61,f.pct>0?74:61);
-        doc.setFont('helvetica',f.pct>0?'bold':'normal');
-        doc.text(f.pct+'%',102,y+7.5,'right');
-        // Esta est monto
-        doc.setTextColor(f.estaEst>0?232:61,f.estaEst>0?228:61,f.estaEst>0?222:61);
-        doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
-        doc.text(f.estaEst>0?fmt(f.estaEst):'—',122,y+7.5,'right');
+        // Numbers — all in medium grey, highlights in white/copper
+        d.setFontSize(7.5);d.setFont('helvetica','normal');
+
+        // Presup
+        d.setTextColor(GR1[0],GR1[1],GR1[2]);
+        d.text(fmt(f.presP),C_PRE,ly+7,'right');
+
+        // Acum ant
+        d.setTextColor(f.acumAnt>0?GR1[0]:GR3[0],f.acumAnt>0?GR1[1]:GR3[1],f.acumAnt>0?GR1[2]:GR3[2]);
+        d.text(f.acumAnt>0?fmt(f.acumAnt):'—',C_ANT,ly+7,'right');
+
+        // Pct
+        d.setFont('helvetica',f.pct>0?'bold':'normal');
+        d.setTextColor(f.pct>0?COP[0]:GR3[0],f.pct>0?COP[1]:GR3[1],f.pct>0?COP[2]:GR3[2]);
+        d.text(f.pct+'%',C_PCT,ly+7,'right');
+
+        // Esta est
+        d.setFont('helvetica',f.estaEst>0?'bold':'normal');
+        d.setTextColor(f.estaEst>0?WHT[0]:GR3[0],f.estaEst>0?WHT[1]:GR3[1],f.estaEst>0?WHT[2]:GR3[2]);
+        d.text(f.estaEst>0?fmt(f.estaEst):'—',C_EST,ly+7,'right');
+
         // Acum total
-        doc.setTextColor(122,117,112);doc.setFont('helvetica','normal');
-        doc.text(f.acumTotal>0?fmt(f.acumTotal):'—',146,y+7.5,'right');
-        // Saldo
-        var saldoColor=f.saldo<0?[184,80,74]:[100,100,100];
-        doc.setTextColor(saldoColor[0],saldoColor[1],saldoColor[2]);
-        doc.text(fmt(f.saldo),166,y+7.5,'right');
-        // Mini bar (avance acumulado)
-        var barX=168, barW=26;
-        var pctAcum=f.presP>0?Math.min(100,Math.round(f.acumTotal/f.presP*100)):0;
-        doc.setFillColor(36,36,36);doc.rect(barX,y+4,barW,3,'F');
-        if(pctAcum>0){doc.setFillColor(184,135,74);doc.rect(barX,y+4,Math.round(barW*pctAcum/100),3,'F');}
-        doc.setFontSize(6.5);doc.setFont('helvetica','bold');
-        doc.setTextColor(pctAcum>0?184:61,pctAcum>0?135:61,pctAcum>0?74:61);
-        doc.text(pctAcum+'%',196,y+7.5,'right');
+        d.setFont('helvetica','normal');
+        d.setTextColor(GR1[0],GR1[1],GR1[2]);
+        d.text(f.acumTot>0?fmt(f.acumTot):'—',C_ACU,ly+7,'right');
 
-        y+=rowH;
-        doc.setDrawColor(30,30,30);doc.setLineWidth(0.2);doc.line(14,y,196,y);
+        // Saldo
+        var sc=f.saldo<0?[160,80,74]:GR2;
+        d.setTextColor(sc[0],sc[1],sc[2]);
+        d.text(fmt(f.saldo),C_SAL,ly+7,'right');
+
+        // Mini bar
+        var barW=20;
+        var pctAcum=f.presP>0?Math.min(100,Math.round(f.acumTot/f.presP*100)):0;
+        d.setFillColor(GR3[0],GR3[1],GR3[2]);d.rect(C_BAR,ly+3.5,barW,2.5,'F');
+        if(pctAcum>0){d.setFillColor(COP[0],COP[1],COP[2]);d.rect(C_BAR,ly+3.5,Math.round(barW*pctAcum/100),2.5,'F');}
+        d.setFontSize(6.5);d.setFont('helvetica','bold');
+        d.setTextColor(pctAcum>0?COP[0]:GR3[0],pctAcum>0?COP[1]:GR3[1],pctAcum>0?COP[2]:GR3[2]);
+        d.text(pctAcum+'%',C_END,ly+7,'right');
+
+        ly+=rowH;
+        d.setDrawColor(GR3[0],GR3[1],GR3[2]);d.setLineWidth(0.15);d.line(14,ly,C_END,ly);
       });
 
-      // Total row
-      y+=2;
-      doc.setFillColor(20,20,20);doc.rect(14,y,182,10,'F');
-      doc.setFillColor(184,135,74);doc.rect(14,y,0.4,10,'F');
-      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-      doc.text('TOTALES',16,y+7);
-      doc.setTextColor(122,117,112);doc.text(fmt(totalPresup),72,y+7,'right');
-      doc.setTextColor(200,200,200);doc.text(fmt(totalAcumAnt),91,y+7,'right');
-      doc.text('',102,y+7,'right');
-      doc.setTextColor(184,135,74);doc.text(fmt(totalEstaEst),122,y+7,'right');
-      doc.setTextColor(200,200,200);doc.text(fmt(totalAcum),146,y+7,'right');
-      doc.setTextColor(100,100,100);doc.text(fmt(totalPresup-totalAcum),166,y+7,'right');
-      y+=16;
+      // Totals row
+      ly+=2;
+      d.setFillColor(BG2[0],BG2[1],BG2[2]);d.rect(14,ly,C_END,9,'F');
+      d.setFillColor(COP[0],COP[1],COP[2]);d.rect(14,ly,0.4,9,'F');
+      d.setFontSize(7.5);d.setFont('helvetica','bold');
+      d.setTextColor(COP[0],COP[1],COP[2]);d.text('TOTALES',C_NOM+2,ly+6.5);
+      d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text(fmt(totPres),C_PRE,ly+6.5,'right');
+      d.text(fmt(totAcumAnt),C_ANT,ly+6.5,'right');
+      d.setTextColor(WHT[0],WHT[1],WHT[2]);d.text(fmt(totEst),C_EST,ly+6.5,'right');
+      d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text(fmt(totAcum),C_ACU,ly+6.5,'right');
+      d.setTextColor(GR2[0],GR2[1],GR2[2]);d.text(fmt(totPres-totAcum),C_SAL,ly+6.5,'right');
+      ly+=16;
 
-      // ── FINANCIAL SUMMARY ──
-      if(y>245){doc.addPage();y=20;}
-      var ivaTotal=Math.round(e.montoBase*0.16);
-      var conIva=e.montoBase+ivaTotal;
-      var boxH2=8+(e.descAnticipo>0?8:0)+(e.descRetencion>0?8:0)+28;
-      doc.setFillColor(18,18,18);doc.rect(108,y,88,boxH2,'F');
-      doc.setFillColor(184,135,74);doc.rect(108,y,0.5,boxH2,'F');
-      var ry=y+9;
-      doc.setFontSize(8.5);doc.setFont('helvetica','normal');
-      doc.setTextColor(122,117,112);doc.text('Subtotal (sin IVA)',112,ry);
-      doc.setTextColor(232,228,222);doc.text(fmt(e.montoBase),194,ry,'right');ry+=8;
-      doc.setTextColor(122,117,112);doc.text('IVA 16%',112,ry);
-      doc.setTextColor(232,228,222);doc.text(fmt(ivaTotal),194,ry,'right');ry+=7;
-      doc.setDrawColor(36,36,36);doc.line(112,ry,194,ry);ry+=6;
-      doc.setTextColor(122,117,112);doc.text('Total c/IVA',112,ry);
-      doc.setTextColor(232,228,222);doc.text(fmt(conIva),194,ry,'right');ry+=9;
+      // ── Financial Summary ──
+      if(ly>PH-55){d.addPage();hdr();ly=36;}
+      var ivaT=Math.round(e.montoBase*0.16);
+      var conIva=e.montoBase+ivaT;
+      var bxH=8+(e.descAnticipo>0?8:0)+(e.descRetencion>0?8:0)+24;
+      d.setFillColor(BG2[0],BG2[1],BG2[2]);d.rect(160,ly,C_END-160,bxH,'F');
+      d.setFillColor(COP[0],COP[1],COP[2]);d.rect(160,ly,0.4,bxH,'F');
+      var rly=ly+8;
+      d.setFontSize(8);d.setFont('helvetica','normal');
+      d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text('Subtotal (sin IVA)',163,rly);
+      d.setTextColor(WHT[0],WHT[1],WHT[2]);d.text(fmt(e.montoBase),C_END,rly,'right');rly+=8;
+      d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text('IVA 16%',163,rly);
+      d.setTextColor(WHT[0],WHT[1],WHT[2]);d.text(fmt(ivaT),C_END,rly,'right');rly+=6;
+      d.setDrawColor(GR3[0],GR3[1],GR3[2]);d.line(163,rly,C_END,rly);rly+=6;
+      d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text('Total c/IVA',163,rly);
+      d.setTextColor(WHT[0],WHT[1],WHT[2]);d.text(fmt(conIva),C_END,rly,'right');rly+=9;
       if(e.descAnticipo>0){
-        doc.setTextColor(122,117,112);doc.text('Anticipo ('+(o.pctAnticipo||0)+'%)',112,ry);
-        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descAnticipo),194,ry,'right');ry+=8;
+        d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text('Anticipo ('+(o.pctAnticipo||0)+'%)',163,rly);
+        d.setTextColor(COP[0],COP[1],COP[2]);d.text('− '+fmt(e.descAnticipo),C_END,rly,'right');rly+=8;
       }
       if(e.descRetencion>0){
-        doc.setTextColor(122,117,112);doc.text('Retención ('+(e.pctRetencion||0)+'%)',112,ry);
-        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descRetencion),194,ry,'right');ry+=8;
+        d.setTextColor(GR1[0],GR1[1],GR1[2]);d.text('Retención ('+(e.pctRetencion||0)+'%)',163,rly);
+        d.setTextColor(COP[0],COP[1],COP[2]);d.text('− '+fmt(e.descRetencion),C_END,rly,'right');rly+=8;
       }
-      doc.setDrawColor(184,135,74);doc.setLineWidth(0.5);doc.line(112,ry,194,ry);ry+=9;
-      doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),112,ry);
-      doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-      doc.text(fmt(e.montoFinal),194,ry,'right');
+      d.setDrawColor(COP[0],COP[1],COP[2]);d.setLineWidth(0.4);d.line(163,rly,C_END,rly);rly+=8;
+      d.setFontSize(7);d.setFont('helvetica','normal');d.setTextColor(GR1[0],GR1[1],GR1[2]);
+      d.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),163,rly);
+      d.setFontSize(13);d.setFont('helvetica','bold');d.setTextColor(COP[0],COP[1],COP[2]);
+      d.text(fmt(e.montoFinal),C_END,rly,'right');
+
+      // Footer all pages
+      var totPgs=d.internal.getNumberOfPages();
+      for(var pg=1;pg<=totPgs;pg++){d.setPage(pg);ftr(pg,totPgs);}
+
+      // Save landscape doc
+      var fecha2=new Date().toISOString().split('T')[0];
+      var oSlug=o.nombre.replace(/[^a-zA-Z0-9]/g,'-').replace(/-+/g,'-');
+      var eNum=e.num.replace(/[^a-zA-Z0-9]/g,'-');
+      d.save(fecha2+'-'+eNum+'-'+oSlug+'.pdf');
+      return; // skip normal save
 
     } else if(tipo==="extras"){
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
@@ -3255,12 +3307,14 @@ window.genPDF=function(obraId,estId,tipo){
     var totalPgs=doc.internal.getNumberOfPages();
     for(var pg=1;pg<=totalPgs;pg++){
       doc.setPage(pg);
-      doc.setFillColor(10,10,10);doc.rect(0,282,210,15,'F');
-      doc.setFillColor(184,135,74);doc.rect(0,282,210,0.3,'F');
-      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',14,289);
-      doc.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),105,289,'center');
-      doc.text('Pág '+pg+'/'+totalPgs,196,289,'right');
+      var fw=isEst?297:210;
+      var fy=isEst?196:282;
+      doc.setFillColor(10,10,10);doc.rect(0,fy,fw,14,'F');
+      doc.setFillColor(184,135,74);doc.rect(0,fy,fw,0.3,'F');
+      doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
+      doc.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',10,fy+7);
+      doc.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),fw/2,fy+7,'center');
+      doc.text('Pág '+pg+'/'+totalPgs,fw-10,fy+7,'right');
     }
 
     var fecha = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
