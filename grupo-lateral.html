@@ -3143,7 +3143,7 @@ window.genPDF=function(obraId,estId,tipo){
       // C6 % esta:    right=228  (8mm)
       // C7 % acum:    right=243  (15mm)
       // C8 Saldo:     right=283  (40mm)
-      var c1=ML+2, c2=115, c3=148, c4=180, c5x=184, c5w=40, c6=228, c7=245, c8=PW-MR;
+      var c1=ML+2, c2=115, c3=148, c4=180, c5x=185, c5w=40, c6=230, c7=255, c8=PW-MR;
 
       // Encabezado tabla
       doc.setFillColor(240,238,235);doc.rect(ML,y,CW,7,'F');
@@ -3152,7 +3152,8 @@ window.genPDF=function(obraId,estId,tipo){
       doc.text('PRESUPUESTO',c2,y+5,'right');
       doc.text('ACUM. ANTERIOR',c3,y+5,'right');
       doc.text('ESTA ESTIMACIÓN',c4,y+5,'right');
-      doc.text('AVANCE ACUMULADO',c5x+c5w+26,y+5,'right');
+      doc.text('EST.%',c6,y+5,'right');
+      doc.text('ACUM.%',c7,y+5,'right');
       doc.text('SALDO',c8,y+5,'right');
       y+=9;
 
@@ -3167,7 +3168,7 @@ window.genPDF=function(obraId,estId,tipo){
           doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
           doc.text('PARTIDA',c1,y+5);doc.text('PRESUPUESTO',c2,y+5,'right');
           doc.text('ACUM. ANTERIOR',c3,y+5,'right');doc.text('ESTA ESTIMACIÓN',c4,y+5,'right');
-          doc.text('AVANCE ACUMULADO',c5x+c5w+26,y+5,'right');doc.text('SALDO',c8,y+5,'right');
+          doc.text('EST.%',c6,y+5,'right');doc.text('ACUM.%',c7,y+5,'right');doc.text('SALDO',c8,y+5,'right');
           y+=9;
         }
         var rowH=11;
@@ -3200,14 +3201,14 @@ window.genPDF=function(obraId,estId,tipo){
           doc.rect(c5x,y+4,Math.round(c5w*pctAcum/100),3,'F');
         }
 
-        // C6: % esta estimación (justo después de la barra con espacio)
-        doc.setFontSize(8);doc.setFont('helvetica','bold');
+        // C6: % esta estimación
+        doc.setFontSize(8.5);doc.setFont('helvetica','bold');
         doc.setTextColor(f.pct>0?184:170,f.pct>0?135:165,f.pct>0?74:160);
-        doc.text(f.pct+'%',c5x+c5w+4,y+7.5,'left');
+        doc.text(f.pct+'%',c6,y+7.5,'right');
 
-        // C7: % acumulado (gris, chico)
-        doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(165,160,155);
-        doc.text('('+pctAcum+'% acum)',c7,y+7.5,'right');
+        // C7: % acumulado (gris, bien separado)
+        doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(165,160,155);
+        doc.text(pctAcum+'%',c7,y+7.5,'right');
 
         // C8: Saldo
         var neg=f.saldo<0;
