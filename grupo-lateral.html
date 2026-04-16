@@ -758,7 +758,6 @@ const NAVS={
     {sec:"Gestión"},
     {id:"extras",label:"Conceptos extra",icon:"⊕"},
     {id:"adicionales",label:"Adicionales",icon:"➕"},
-    {id:"adicionales",label:"Adicionales",icon:"➕"},
     {id:"pagos",label:"Pagos",icon:"💳"},
     {id:"reportes-diarios",label:"Reportes de avance",icon:"📋"},
     {id:"reportes",label:"Reportes PDF",icon:"⬇"},
@@ -1212,6 +1211,129 @@ function pgDashboard(main){
   </div>`;
 }
 
+window.verObra = function(obraId){
+  var o = OBRAS.find(function(x){return x.id===obraId;});
+  if(!o) return;
+  var main = document.querySelector("main");
+  if(!main) return;
+
+  var fmtM = function(n){return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",minimumFractionDigits:0}).format(n||0);};
+
+  // Calcular totales
+  var totalEstExt = (o.estimacionesExt||[]).filter(function(e){return e.status==="aprobada"||e.aprobadoCliente==="aprobada";})
+    .reduce(function(s,e){return s+Math.round(e.montoBase*1.16-e.descAnticipo);},0);
+  var totalPagosExt = (o.pagosExt||[]).reduce(function(s,p){return s+p.monto;},0) + (o.anticipo||0);
+  var saldoExt = totalEstExt - totalPagosExt;
+  var totalEstInt = (o.estimacionesInt||[]).filter(function(e){return e.status==="aprobada";})
+    .reduce(function(s,e){return s+Math.round(e.montoBase*1.16-e.descAnticipo);},0);
+  var totalPagosInt = (o.pagosInt||[]).reduce(function(s,p){return s+p.monto;},0);
+  var saldoInt = totalEstInt - totalPagosInt;
+
+  var html = '';
+  // Header
+  html += '<div class="flex aic gap10 mb14">';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;obras&quot;)">← Obras</button>';
+  html += '<div style="flex:1"><div class="page-title mb0">' + o.nombre + '</div>';
+  html += '<div class="fs12 c3">Cliente: ' + o.cliente + ' · Residente: ' + (USERS.find(function(u){return u.u===o.residente;})||{}).nombre + '</div></div>';
+  html += '<span class="badge ' + (obraCompleta(o)?'b-teal':'b-amber') + '">' + (obraCompleta(o)?'Activa':'Sin presupuesto') + '</span>';
+  html += '</div>';
+
+  // Avance general
+  html += '<div class="card mb14">';
+  html += '<div class="sec-title mb10">Avance general</div>';
+  html += '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">';
+  html += '<div style="font-size:36px;font-family:serif;color:var(--accent)">' + o.avanceGlobal + '%</div>';
+  html += '<div style="flex:1"><div class="prog-bar" style="height:6px"><div class="prog-fill pf-teal" style="width:' + o.avanceGlobal + '%"></div></div></div>';
+  html += '</div>';
+  // Partidas
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">';
+  o.partidas.forEach(function(p){
+    var importeP = p.conceptos.reduce(function(s,c){return s+(c.importe||0);},0);
+    html += '<div style="background:var(--bg2);padding:10px;border:1px solid var(--border)">';
+    html += '<div class="flex aic gap6 mb6">';
+    html += '<span class="fs12" style="flex:1;color:var(--text2)">' + p.nombre + '</span>';
+    html += '<span style="color:var(--accent);font-weight:700;font-size:13px">' + p.pctExt + '%</span>';
+    html += '</div>';
+    html += '<div class="prog-bar"><div class="prog-fill pf-teal" style="width:' + p.pctExt + '%"></div></div>';
+    if(importeP) html += '<div class="fs11 c3 mt6">' + fmtM(importeP) + '</div>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+
+  // Financiero
+  html += '<div class="g2 mb14">';
+  // Externo
+  html += '<div class="card">';
+  html += '<div class="sec-title mb10">Externo (cliente)</div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Presupuesto</span><span class="fw6">' + fmtM(o.presupuestoExterno) + '</span></div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Estimado y aprobado</span><span class="fw6 cteal">' + fmtM(totalEstExt) + '</span></div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Cobrado</span><span class="fw6">- ' + fmtM(totalPagosExt) + '</span></div>';
+  html += '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px" class="flex aic gap10">';
+  html += '<span class="fs13 fw6" style="flex:1">Saldo por cobrar</span>';
+  html += '<span style="font-size:18px;font-weight:700;color:' + (saldoExt>0?'var(--coral)':'var(--teal)') + '">' + fmtM(saldoExt) + '</span></div>';
+  html += '</div>';
+  // Interno
+  html += '<div class="card">';
+  html += '<div class="sec-title mb10">Interno (proveedores)</div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Presupuesto</span><span class="fw6">' + fmtM(o.presupuestoInterno||0) + '</span></div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Estimado y aprobado</span><span class="fw6" style="color:var(--coral)">' + fmtM(totalEstInt) + '</span></div>';
+  html += '<div class="flex aic gap10 mb6"><span class="fs12 c2" style="flex:1">Pagado</span><span class="fw6">- ' + fmtM(totalPagosInt) + '</span></div>';
+  html += '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px" class="flex aic gap10">';
+  html += '<span class="fs13 fw6" style="flex:1">Saldo por pagar</span>';
+  html += '<span style="font-size:18px;font-weight:700;color:' + (saldoInt>0?'var(--coral)':'var(--teal)') + '">' + fmtM(saldoInt) + '</span></div>';
+  html += '</div>';
+  html += '</div>';
+
+  // Estimaciones recientes
+  var estsExt = (o.estimacionesExt||[]).slice(-3).reverse();
+  var estsInt = (o.estimacionesInt||[]).slice(-3).reverse();
+  if(estsExt.length||estsInt.length){
+    html += '<div class="card mb14">';
+    html += '<div class="sec-title mb10">Estimaciones recientes</div>';
+    html += '<div class="g2">';
+    if(estsExt.length){
+      html += '<div>';
+      html += '<div class="fs11 c3 mb8" style="text-transform:uppercase;letter-spacing:.08em">Externas</div>';
+      estsExt.forEach(function(e){
+        var st = e.status==="aprobada"||e.aprobadoCliente==="aprobada" ? '<span class="badge b-green">Aprobada</span>' : '<span class="badge b-amber">Pendiente</span>';
+        html += '<div class="flex aic gap10 mb8" style="padding:8px;background:var(--bg2);border:1px solid var(--border)">';
+        html += '<div style="flex:1"><div class="fs12 fw6">' + e.num + '</div><div class="fs11 c3">' + e.fecha + '</div></div>';
+        html += st + '<span class="fs12 fw6 cteal">' + fmtM(e.montoFinal) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    if(estsInt.length){
+      html += '<div>';
+      html += '<div class="fs11 c3 mb8" style="text-transform:uppercase;letter-spacing:.08em">Internas</div>';
+      estsInt.forEach(function(e){
+        var st = e.status==="aprobada" ? '<span class="badge b-green">Aprobada</span>' : '<span class="badge b-amber">Pendiente</span>';
+        html += '<div class="flex aic gap10 mb8" style="padding:8px;background:var(--bg2);border:1px solid var(--border)">';
+        html += '<div style="flex:1"><div class="fs12 fw6">' + e.num + '</div><div class="fs11 c3">' + e.fecha + '</div></div>';
+        html += st + '<span class="fs12 fw6" style="color:var(--coral)">' + fmtM(e.montoFinal) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  // Acciones rápidas
+  html += '<div class="card">';
+  html += '<div class="sec-title mb10">Acciones</div>';
+  html += '<div class="flex gap10" style="flex-wrap:wrap">';
+  html += '<button class="btn btn-primary btn-sm" onclick="verDesglose(' + o.id + ')">📊 Presupuesto</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;est-externas&quot;)">◨ Estimaciones ext.</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;est-internas&quot;)">◧ Estimaciones int.</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;pagos&quot;)">💳 Pagos</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(&quot;reportes-diarios&quot;)">📋 Reportes</button>';
+  if(SESSION.rol==="admin"){
+    html += '<button class="btn btn-ghost btn-sm" onclick="abrirActualizarPres(' + o.id + ',&quot;ext&quot;)">⬆ Actualizar presupuesto</button>';
+    html += '<button class="btn btn-ghost btn-sm" onclick="abrirEditarObra(' + o.id + ')">✏ Editar</button>';
+  }
+  html += '</div></div>';
+
+  main.innerHTML = html;
+};
+
 function pgObras(main){
   main.innerHTML=`
   <div class="sec-hdr">
@@ -1222,7 +1344,7 @@ function pgObras(main){
   <div class="card mb14">
     <div class="flex aic gap10 mb14">
       <div style="flex:1">
-        <div style="font-size:16px;font-weight:600">${o.nombre}</div>
+        <div style="font-size:16px;font-weight:600;cursor:pointer;color:var(--accent)" onclick="verObra(${o.id})">${o.nombre}</div>
         <div class="fs12 c3 mt6">Cliente: ${o.cliente} · Residente: ${USERS.find(u=>u.u===o.residente)?.nombre||o.residente}</div>
       </div>
       <span class="badge ${obraCompleta(o)?"b-teal":"b-amber"}">${obraCompleta(o)?"Activa":"Sin presupuesto"}</span>
@@ -1245,7 +1367,8 @@ function pgObras(main){
     ${(SESSION.rol==="admin"||SESSION.rol==="supervisor")?`
     <div class="divider"></div>
     <div class="flex gap10" style="flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="verDesglose(${o.id})">📊 Ver presupuesto</button>
+      <button class="btn btn-primary btn-sm" onclick="verObra(${o.id})">→ Ver obra</button>
+      <button class="btn btn-ghost btn-sm" onclick="verDesglose(${o.id})">📊 Presupuesto</button>
       ${SESSION.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarObra(${o.id})">✏ Editar</button>`:""}
       <button class="btn btn-ghost btn-sm" onclick="abrirActualizarPres(${o.id},'ext')">⬆ Presupuesto externo</button>
       <button class="btn btn-ghost btn-sm" onclick="abrirActualizarPres(${o.id},'int')">⬆ Presupuesto interno</button>
