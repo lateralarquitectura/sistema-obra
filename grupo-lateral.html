@@ -3007,64 +3007,86 @@ window.genPDF=function(obraId,estId,tipo){
     if(!window.jspdf){alert('jsPDF no cargado');return;}
     const {jsPDF}=window.jspdf;
     var isEst=(tipo==="ext"||tipo==="int");
+    // Landscape para estimaciones, portrait para lo demás
     var doc=isEst?new jsPDF({orientation:'landscape',unit:'mm',format:'a4'}):new jsPDF();
-    var PW=isEst?297:210; // page width
-    var PH=isEst?210:297; // page height
-    const o=OBRAS.find(x=>x.id===obraId);
+    var PW=isEst?297:210;
+    var PH=isEst?210:297;
+    var ML=14, MR=14; // márgenes
+    var CW=PW-ML-MR;  // ancho útil: 269 landscape, 182 portrait
+    var o=OBRAS.find(function(x){return x.id===obraId;});
     if(!o){alert('Obra no encontrada');return;}
+    var arr=tipo==="int"?o.estimacionesInt:o.estimacionesExt;
+    var e=arr?arr.find(function(x){return x.id===estId||x.id===parseInt(estId);}):null;
+    var pres=tipo==="int"?(o.presupuestoInterno||o.presupuestoExterno):o.presupuestoExterno;
 
-    const arr=tipo==="int"?o.estimacionesInt:o.estimacionesExt;
-    const e=arr?arr.find(x=>x.id===estId||x.id===parseInt(estId)):null;
-    const pres=tipo==="int"?(o.presupuestoInterno||o.presupuestoExterno):o.presupuestoExterno;
-
-    // Header — negro completo 38mm, logo centrado verticalmente
-    doc.setFillColor(10,10,10);
-    doc.rect(0,0,210,38,'F');
-    try{
-      doc.addImage(LOGO,'JPEG',10,10,70,18);
-    }catch(imgErr){
-      doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
-      doc.text('GRUPO LATERAL',12,22);
-      doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text('ARQUITECTURA Y CONSTRUCCIÓN',12,29);
+    // ─── HELPERS ───
+    function drawHeader(){
+      doc.setFillColor(10,10,10);
+      doc.rect(0,0,PW,36,'F');
+      try{doc.addImage(LOGO,'JPEG',ML,8,90,20);}catch(er){
+        doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
+        doc.text('GRUPO LATERAL',ML,22);
+      }
+      doc.setFillColor(184,135,74);
+      doc.rect(0,36,PW,0.8,'F');
     }
-    doc.setFillColor(184,135,74);doc.rect(0,38,210,0.8,'F');
+    function drawFooter(pg,total){
+      doc.setFillColor(10,10,10);
+      doc.rect(0,PH-14,PW,14,'F');
+      doc.setFillColor(184,135,74);
+      doc.rect(0,PH-14,PW,0.5,'F');
+      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(120,115,110);
+      doc.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',ML,PH-5);
+      doc.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),PW/2,PH-5,'center');
+      doc.text('Pág '+pg+'/'+total,PW-MR,PH-5,'right');
+    }
+    function newPage(){
+      doc.addPage();
+      drawHeader();
+      return 46;
+    }
 
-    let y=50;
+    drawHeader();
+    var y=46;
 
+    // ══════════════════════════════
+    // AVANCE
+    // ══════════════════════════════
     if(tipo==="avance"){
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
-      doc.text('REPORTE DE AVANCE',14,y);y+=8;
-      doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(232,228,222);
-      doc.text(o.nombre,14,y);y+=8;
-      doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text('Cliente: '+o.cliente+'   ·   Fecha: '+new Date().toLocaleDateString('es-MX'),14,y);y+=12;
-      doc.setFillColor(184,135,74);doc.rect(14,y,182,0.3,'F');y+=8;
+      doc.text('REPORTE DE AVANCE',ML,y);y+=7;
+      doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(20,20,20);
+      doc.text(o.nombre,ML,y);y+=7;
+      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(150,145,140);
+      doc.text('Cliente: '+o.cliente+'   ·   Fecha: '+new Date().toLocaleDateString('es-MX'),ML,y);y+=10;
+      doc.setFillColor(184,135,74);doc.rect(ML,y,CW,0.4,'F');y+=8;
 
-      doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(122,117,112);
-      doc.text('PARTIDA',14,y);doc.text('AVANCE',120,y);doc.text('%',196,y,'right');y+=5;
-      doc.setFillColor(36,36,36);doc.rect(14,y,182,0.2,'F');y+=6;
+      doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
+      doc.text('PARTIDA',ML+2,y);doc.text('AVANCE',ML+CW*0.5,y);doc.text('%',ML+CW,y,'right');
+      y+=4;doc.setFillColor(36,36,36);doc.rect(ML,y,CW,0.2,'F');y+=6;
 
       o.partidas.forEach(function(p){
-        if(y>265){doc.addPage();y=20;}
+        if(y>PH-22){y=newPage();}
         doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(232,228,222);
-        var nombre=p.nombre.length>30?p.nombre.substring(0,29)+'…':p.nombre;
-        doc.text(nombre,14,y+5);
-        // Bar
-        doc.setFillColor(36,36,36);doc.rect(120,y+2,50,3,'F');
-        if(p.pctExt>0){doc.setFillColor(184,135,74);doc.rect(120,y+2,Math.round(50*p.pctExt/100),3,'F');}
+        doc.text(p.nombre,ML+2,y+5);
+        var bx=ML+CW*0.45,bw=60;
+        doc.setFillColor(36,36,36);doc.rect(bx,y+2,bw,3,'F');
+        if(p.pctExt>0){doc.setFillColor(184,135,74);doc.rect(bx,y+2,Math.round(bw*p.pctExt/100),3,'F');}
         doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-        doc.text(p.pctExt+'%',196,y+5,'right');
+        doc.text(p.pctExt+'%',ML+CW,y+5,'right');
         y+=11;
-        doc.setDrawColor(36,36,36);doc.setLineWidth(0.2);doc.line(14,y,196,y);
+        doc.setDrawColor(36,36,36);doc.setLineWidth(0.2);doc.line(ML,y,ML+CW,y);
       });
 
-        } else if(tipo==="ext"||tipo==="int"){
+    // ══════════════════════════════
+    // ESTIMACIÓN EXT / INT  (landscape 297x210)
+    // ══════════════════════════════
+    } else if(tipo==="ext"||tipo==="int"){
       if(!e){alert('Estimación no encontrada');return;}
 
-      // ── Cálculos por partida ──
+      // Cálculos
       var filas=[];
-      var totalPresup=0,totalEstaEst=0,totalAcumAnt=0,totalAcum=0;
+      var totPres=0,totEsta=0,totAcumAnt=0,totAcum=0;
       o.partidas.forEach(function(p,i){
         var presP=p.conceptos.reduce(function(s,c){return s+(tipo==="int"?(c.importeInt||0):(c.importe||0));},0);
         if(!presP)presP=pres/o.partidas.length;
@@ -3079,212 +3101,208 @@ window.genPDF=function(obraId,estId,tipo){
         var pct=e.pctPartidas&&e.pctPartidas[i]?e.pctPartidas[i]:0;
         var estaEst=Math.round(presP*(pct/100));
         var acumTotal=acumAnt+estaEst;
-        totalPresup+=presP;totalEstaEst+=estaEst;totalAcumAnt+=acumAnt;totalAcum+=acumTotal;
+        totPres+=presP;totEsta+=estaEst;totAcumAnt+=acumAnt;totAcum+=acumTotal;
         filas.push({nombre:p.nombre,presP:presP,acumAnt:acumAnt,pct:pct,estaEst:estaEst,acumTotal:acumTotal,saldo:presP-acumTotal});
       });
 
       // Fondo blanco contenido
-      doc.setFillColor(255,255,255);doc.rect(0,34,210,248,'F');
+      doc.setFillColor(255,255,255);doc.rect(0,36,PW,PH-36,'F');
 
-      // ── TÍTULO ──
+      // Título
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
-      doc.text(tipo==="int"?"ESTIMACIÓN INTERNA":"ESTIMACIÓN EXTERNA",14,y);y+=7;
+      doc.text(tipo==="int"?"ESTIMACIÓN INTERNA":"ESTIMACIÓN EXTERNA",ML,y);y+=7;
       doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(20,20,20);
-      var oNom=o.nombre.length>36?o.nombre.substring(0,35)+'…':o.nombre;
-      doc.text(oNom,14,y);y+=7;
-      doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(150,145,140);
-      doc.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,14,y);y+=10;
+      var oNom=o.nombre.length>50?o.nombre.substring(0,49)+'…':o.nombre;
+      doc.text(oNom,ML,y);y+=7;
+      doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(150,145,140);
+      doc.text(e.num+'   ·   '+e.fecha+'   ·   Cliente: '+o.cliente,ML,y);y+=10;
 
-      // ── 4 BLOQUES RESUMEN ──
-      var bW=43,bGap=2,bY=y;
-      var bLabels=['ESTA ESTIMACIÓN','ACUMULADO ANT.','PRESUP. TOTAL','SALDO'];
-      var bVals=[totalEstaEst,totalAcumAnt,totalPresup,totalPresup-totalAcum];
+      // 4 bloques resumen — ahora tienen espacio en landscape
+      var bW=60,bGap=3,bY=y;
+      var bLabels=['ESTA ESTIMACIÓN','ACUMULADO ANTERIOR','PRESUPUESTO TOTAL','SALDO POR ESTIMAR'];
+      var bVals=[totEsta,totAcumAnt,totPres,totPres-totAcum];
       for(var bi=0;bi<4;bi++){
-        var bx=14+bi*(bW+bGap);
-        doc.setFillColor(247,247,245);doc.rect(bx,bY,bW,18,'F');
-        doc.setFillColor(bi===0?184:220,bi===0?135:218,bi===0?74:215);
-        doc.rect(bx,bY,bW,1.2,'F');
-        doc.setFontSize(5.5);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
-        doc.text(bLabels[bi],bx+3,bY+6);
-        doc.setFontSize(bi===0?11:9);doc.setFont('helvetica','bold');
+        var bx=ML+bi*(bW+bGap);
+        doc.setFillColor(247,247,245);doc.rect(bx,bY,bW,20,'F');
+        doc.setFillColor(bi===0?184:210,bi===0?135:208,bi===0?74:205);
+        doc.rect(bx,bY,bW,1.5,'F');
+        doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(160,155,150);
+        doc.text(bLabels[bi],bx+4,bY+7);
+        doc.setFontSize(bi===0?12:10);doc.setFont('helvetica','bold');
         doc.setTextColor(bi===0?184:60,bi===0?135:60,bi===0?74:60);
-        doc.text(fmt(bVals[bi]),bx+bW-3,bY+14,'right');
+        doc.text(fmt(bVals[bi]),bx+bW-4,bY+16,'right');
       }
-      y+=24;
+      y+=28;
 
-      // ── COLUMNAS: layout fijo ──
-      // C1 Partida:    x=14,  hasta x=66
-      // C2 Presup:     right=96
-      // C3 Acum.Ant:   right=122
-      // C4 Esta Est $: right=150
-      // C5 Bar:        x=153, w=26, hasta x=179
-      // C6 %:          right=189
-      // C7 Saldo:      right=196
-      var C1=14, C2=96, C3=122, C4=150, C5x=153, C5w=26, C6=189, C7=196;
+      // Columnas — landscape 297mm ancho, útil 269mm
+      // C1 Partida:   14  → 90   (76mm)
+      // C2 Presup:    right=115  (25mm)
+      // C3 Acum.Ant:  right=145  (30mm)
+      // C4 Esta Est:  right=178  (33mm) — PROTAGONISTA
+      // C5 Barra:     183 → 220  (37mm)
+      // C6 % esta:    right=228  (8mm)
+      // C7 % acum:    right=243  (15mm)
+      // C8 Saldo:     right=283  (40mm)
+      var c1=ML+2, c2=115, c3=148, c4=180, c5x=184, c5w=40, c6=228, c7=245, c8=PW-MR;
 
-      // ── ENCABEZADO TABLA ──
-      doc.setFillColor(240,238,235);doc.rect(14,y,182,7,'F');
-      doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
-      doc.text('PARTIDA',C1+2,y+5);
-      doc.text('PRESUP.',C2,y+5,'right');
-      doc.text('ACUM.ANT.',C3,y+5,'right');
-      doc.text('ESTA EST.',C4,y+5,'right');
-      doc.text('AVANCE',C5x+C5w+16,y+5,'right');
-      doc.text('SALDO',C7,y+5,'right');
+      // Encabezado tabla
+      doc.setFillColor(240,238,235);doc.rect(ML,y,CW,7,'F');
+      doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
+      doc.text('PARTIDA',c1,y+5);
+      doc.text('PRESUPUESTO',c2,y+5,'right');
+      doc.text('ACUM. ANTERIOR',c3,y+5,'right');
+      doc.text('ESTA ESTIMACIÓN',c4,y+5,'right');
+      doc.text('AVANCE ACUMULADO',c5x+c5w+26,y+5,'right');
+      doc.text('SALDO',c8,y+5,'right');
       y+=9;
 
-      // ── FILAS ──
+      // Filas
       filas.forEach(function(f,fi){
-        if(y>255){
-          doc.addPage();
-          doc.setFillColor(10,10,10);doc.rect(0,0,210,34,'F');
-          try{doc.addImage(LOGO,'JPEG',10,7,65,18);}catch(er){}
-          doc.setFillColor(184,135,74);doc.rect(0,34,210,0.5,'F');
-          doc.setFillColor(255,255,255);doc.rect(0,35,210,262,'F');
-          y=42;
-          doc.setFillColor(240,238,235);doc.rect(14,y,182,7,'F');
-          doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
-          doc.text('PARTIDA',C1+2,y+5);doc.text('PRESUP.',C2,y+5,'right');
-          doc.text('ACUM.ANT.',C3,y+5,'right');doc.text('ESTA EST.',C4,y+5,'right');
-          doc.text('AVANCE',C5x+C5w+16,y+5,'right');doc.text('SALDO',C7,y+5,'right');
+        if(y>PH-22){
+          var totPgs=doc.internal.getNumberOfPages();
+          drawFooter(totPgs,totPgs+1);
+          y=newPage();
+          // Repetir encabezado
+          doc.setFillColor(240,238,235);doc.rect(ML,y,CW,7,'F');
+          doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(140,135,130);
+          doc.text('PARTIDA',c1,y+5);doc.text('PRESUPUESTO',c2,y+5,'right');
+          doc.text('ACUM. ANTERIOR',c3,y+5,'right');doc.text('ESTA ESTIMACIÓN',c4,y+5,'right');
+          doc.text('AVANCE ACUMULADO',c5x+c5w+26,y+5,'right');doc.text('SALDO',c8,y+5,'right');
           y+=9;
         }
-        var rowH=12;
-        if(fi%2===0){doc.setFillColor(252,251,250);doc.rect(14,y,182,rowH,'F');}
+        var rowH=11;
+        if(fi%2===0){doc.setFillColor(252,251,250);doc.rect(ML,y,CW,rowH,'F');}
 
         // C1: Nombre
-        var nom=f.nombre.length>19?f.nombre.substring(0,18)+'…':f.nombre;
+        var nom=f.nombre.length>28?f.nombre.substring(0,27)+'…':f.nombre;
         doc.setFontSize(8.5);doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
         doc.setTextColor(f.estaEst>0?20:160,f.estaEst>0?20:155,f.estaEst>0?20:150);
-        doc.text(nom,C1+2,y+8);
+        doc.text(nom,c1,y+7.5);
 
-        // C2: Presupuesto (gris, pequeño)
-        doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(175,170,165);
-        doc.text(fmt(f.presP),C2,y+8,'right');
+        // C2: Presupuesto (gris chico)
+        doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(175,170,165);
+        doc.text(fmt(f.presP),c2,y+7.5,'right');
 
         // C3: Acum anterior
-        doc.setTextColor(f.acumAnt>0?125:190,f.acumAnt>0?120:185,f.acumAnt>0?115:180);
-        doc.text(f.acumAnt>0?fmt(f.acumAnt):'—',C3,y+8,'right');
+        doc.setTextColor(f.acumAnt>0?120:190,f.acumAnt>0?115:185,f.acumAnt>0?110:180);
+        doc.text(f.acumAnt>0?fmt(f.acumAnt):'—',c3,y+7.5,'right');
 
-        // C4: ESTA EST — protagonista, más grande
-        doc.setFontSize(f.estaEst>0?10:8);doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
+        // C4: ESTA EST — grande y oscuro
+        doc.setFontSize(f.estaEst>0?11:8.5);doc.setFont('helvetica',f.estaEst>0?'bold':'normal');
         doc.setTextColor(f.estaEst>0?20:185,f.estaEst>0?20:180,f.estaEst>0?20:175);
-        doc.text(f.estaEst>0?fmt(f.estaEst):'—',C4,y+8,'right');
+        doc.text(f.estaEst>0?fmt(f.estaEst):'—',c4,y+7.5,'right');
 
-        // C5: Barra (centrada verticalmente en la fila)
+        // C5: Barra — 40mm de ancho, bien separada del texto anterior
         var pctAcum=f.presP>0?Math.min(100,Math.round(f.acumTotal/f.presP*100)):0;
-        doc.setFillColor(225,222,218);doc.rect(C5x,y+4.5,C5w,3,'F');
+        doc.setFillColor(225,222,218);doc.rect(c5x,y+4,c5w,3,'F');
         if(pctAcum>0){
           doc.setFillColor(184,135,74);
-          doc.rect(C5x,y+4.5,Math.round(C5w*pctAcum/100),3,'F');
+          doc.rect(c5x,y+4,Math.round(c5w*pctAcum/100),3,'F');
         }
 
-        // C6: % esta est y % acum — bien separados de la barra
-        doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+        // C6: % esta estimación (justo después de la barra con espacio)
+        doc.setFontSize(8);doc.setFont('helvetica','bold');
         doc.setTextColor(f.pct>0?184:170,f.pct>0?135:165,f.pct>0?74:160);
-        doc.text(f.pct+'%',C5x+C5w+8,y+8,'left');
-        doc.setFontSize(6);doc.setFont('helvetica','normal');doc.setTextColor(170,165,160);
-        doc.text('('+pctAcum+'%)',C6,y+8,'right');
+        doc.text(f.pct+'%',c5x+c5w+4,y+7.5,'left');
 
-        // C7: Saldo
+        // C7: % acumulado (gris, chico)
+        doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(165,160,155);
+        doc.text('('+pctAcum+'% acum)',c7,y+7.5,'right');
+
+        // C8: Saldo
         var neg=f.saldo<0;
-        doc.setFontSize(7.5);doc.setFont('helvetica','normal');
-        doc.setTextColor(neg?175:145,neg?85:140,neg?80:135);
-        doc.text(fmt(Math.abs(f.saldo)),C7,y+8,'right');
+        doc.setFontSize(8);doc.setFont('helvetica','normal');
+        doc.setTextColor(neg?175:140,neg?85:135,neg?80:130);
+        doc.text(fmt(Math.abs(f.saldo)),c8,y+7.5,'right');
 
         y+=rowH;
-        doc.setDrawColor(232,229,225);doc.setLineWidth(0.3);doc.line(14,y,196,y);
+        doc.setDrawColor(232,229,225);doc.setLineWidth(0.3);doc.line(ML,y,ML+CW,y);
       });
 
-      // ── FILA TOTALES ──
+      // Fila totales
       y+=2;
-      doc.setFillColor(240,238,235);doc.rect(14,y,182,9,'F');
-      doc.setFillColor(184,135,74);doc.rect(14,y,2.5,9,'F');
-      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);
-      doc.text('TOTAL',17,y+6.5);
+      doc.setFillColor(240,238,235);doc.rect(ML,y,CW,9,'F');
+      doc.setFillColor(184,135,74);doc.rect(ML,y,2.5,9,'F');
+      doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);
+      doc.text('TOTAL',ML+4,y+6.5);
       doc.setFontSize(7.5);
-      doc.setTextColor(150,145,140);doc.text(fmt(totalPresup),C2,y+6.5,'right');
-      doc.setTextColor(130,125,120);doc.text(fmt(totalAcumAnt),C3,y+6.5,'right');
-      doc.setTextColor(20,20,20);doc.text(fmt(totalEstaEst),C4,y+6.5,'right');
-      doc.setTextColor(140,135,130);doc.text(fmt(totalPresup-totalAcum),C7,y+6.5,'right');
+      doc.setTextColor(150,145,140);doc.text(fmt(totPres),c2,y+6.5,'right');
+      doc.setTextColor(130,125,120);doc.text(fmt(totAcumAnt),c3,y+6.5,'right');
+      doc.setTextColor(20,20,20);doc.setFontSize(9);doc.text(fmt(totEsta),c4,y+6.5,'right');
+      doc.setFontSize(7.5);doc.setTextColor(140,135,130);doc.text(fmt(totPres-totAcum),c8,y+6.5,'right');
       y+=16;
 
-      // ── RESUMEN FINANCIERO ──
-      if(y>250){doc.addPage();doc.setFillColor(255,255,255);doc.rect(0,34,210,263,'F');y=46;}
+      // Resumen financiero — esquina inferior derecha
+      if(y>PH-60){y=newPage();}
       var ivaT=Math.round(e.montoBase*0.16);
       var conIva=e.montoBase+ivaT;
-      var boxH2=8+8+8+(e.descAnticipo>0?8:0)+(e.descRetencion>0?8:0)+14;
-      doc.setFillColor(247,247,245);doc.rect(112,y,84,boxH2,'F');
-      doc.setFillColor(184,135,74);doc.rect(112,y,1.5,boxH2,'F');
-      var ry=y+8;
-      doc.setFontSize(8.5);doc.setFont('helvetica','normal');
-      doc.setTextColor(155,150,145);doc.text('Subtotal (sin IVA)',116,ry);
-      doc.setTextColor(50,50,50);doc.text(fmt(e.montoBase),194,ry,'right');ry+=8;
-      doc.setTextColor(155,150,145);doc.text('IVA 16%',116,ry);
-      doc.setTextColor(50,50,50);doc.text(fmt(ivaT),194,ry,'right');ry+=8;
+      var bxF=PW-MR-100;
+      var boxH2=10+10+10+(e.descAnticipo>0?9:0)+(e.descRetencion>0?9:0)+14;
+      doc.setFillColor(247,247,245);doc.rect(bxF,y,100,boxH2,'F');
+      doc.setFillColor(184,135,74);doc.rect(bxF,y,1.5,boxH2,'F');
+      var ry=y+9;
+      doc.setFontSize(9);doc.setFont('helvetica','normal');
+      doc.setTextColor(155,150,145);doc.text('Subtotal (sin IVA)',bxF+5,ry);
+      doc.setTextColor(50,50,50);doc.text(fmt(e.montoBase),PW-MR,ry,'right');ry+=9;
+      doc.setTextColor(155,150,145);doc.text('IVA 16%',bxF+5,ry);
+      doc.setTextColor(50,50,50);doc.text(fmt(ivaT),PW-MR,ry,'right');ry+=9;
       if(e.descAnticipo>0){
-        doc.setTextColor(155,150,145);doc.text('Anticipo ('+(o.pctAnticipo||0)+'%)',116,ry);
-        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descAnticipo),194,ry,'right');ry+=8;
+        doc.setTextColor(155,150,145);doc.text('Anticipo ('+(o.pctAnticipo||0)+'%)',bxF+5,ry);
+        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descAnticipo),PW-MR,ry,'right');ry+=9;
       }
       if(e.descRetencion>0){
-        doc.setTextColor(155,150,145);doc.text('Retención ('+(e.pctRetencion||0)+'%)',116,ry);
-        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descRetencion),194,ry,'right');ry+=8;
+        doc.setTextColor(155,150,145);doc.text('Retención ('+(e.pctRetencion||0)+'%)',bxF+5,ry);
+        doc.setTextColor(184,135,74);doc.text('− '+fmt(e.descRetencion),PW-MR,ry,'right');ry+=9;
       }
-      doc.setDrawColor(200,195,190);doc.setLineWidth(0.4);doc.line(116,ry,194,ry);ry+=9;
-      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(155,150,145);
-      doc.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),116,ry);
-      doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-      doc.text(fmt(e.montoFinal),194,ry,'right');
+      doc.setDrawColor(200,195,190);doc.setLineWidth(0.4);doc.line(bxF+5,ry,PW-MR,ry);ry+=10;
+      doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(155,150,145);
+      doc.text('TOTAL A '+(tipo==='int'?'PAGAR':'COBRAR'),bxF+5,ry);
+      doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
+      doc.text(fmt(e.montoFinal),PW-MR,ry,'right');
 
-    
+    // ══════════════════════════════
+    // EXTRAS
+    // ══════════════════════════════
     } else if(tipo==="extras"){
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(184,135,74);
-      doc.text('CONCEPTOS EXTRAORDINARIOS',14,y);y+=8;
-      doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(232,228,222);
-      doc.text(o.nombre,14,y);y+=12;
+      doc.text('CONCEPTOS EXTRAORDINARIOS',ML,y);y+=8;
+      doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(20,20,20);
+      doc.text(o.nombre,ML,y);y+=12;
       var extras=o.extras.filter(function(ex){return ex.visible;});
       var total=0;
       extras.forEach(function(ex){
-        if(y>265){doc.addPage();y=20;}
-        doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(232,228,222);
-        doc.text(ex.desc,14,y);
-        doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-        doc.text(fmt(ex.costo),196,y,'right');
-        doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-        doc.text(ex.fecha,14,y+5);
+        if(y>PH-22){y=newPage();}
+        doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(20,20,20);
+        doc.text(ex.desc,ML,y);
+        doc.setTextColor(184,135,74);doc.text(fmt(ex.costo),ML+CW,y,'right');
+        doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(150,145,140);
+        doc.text(ex.fecha,ML,y+5);
         total+=ex.costo;y+=14;
-        doc.setDrawColor(36,36,36);doc.line(14,y,196,y);
+        doc.setDrawColor(232,229,225);doc.line(ML,y,ML+CW,y);
       });
       y+=8;
       doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(184,135,74);
-      doc.text('Total extraordinarios: '+fmt(total),196,y,'right');
+      doc.text('Total extraordinarios: '+fmt(total),ML+CW,y,'right');
     }
 
-    // Footer all pages
+    // Footer en todas las páginas
     var totalPgs=doc.internal.getNumberOfPages();
     for(var pg=1;pg<=totalPgs;pg++){
       doc.setPage(pg);
-      var fw=isEst?297:210;
-      var fy=isEst?196:282;
-      doc.setFillColor(10,10,10);doc.rect(0,fy,fw,14,'F');
-      doc.setFillColor(184,135,74);doc.rect(0,fy,fw,0.3,'F');
-      doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(122,117,112);
-      doc.text('GRUPO LATERAL · ARQUITECTURA Y CONSTRUCCIÓN',10,fy+7);
-      doc.text(new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'}),fw/2,fy+7,'center');
-      doc.text('Pág '+pg+'/'+totalPgs,fw-10,fy+7,'right');
+      drawFooter(pg,totalPgs);
     }
 
-    var fecha = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    var obraSlug = o.nombre.replace(/[^a-zA-Z0-9]/g,'-').replace(/-+/g,'-');
-    var estNum = (tipo==='ext'||tipo==='int') && e ? e.num.replace(/[^a-zA-Z0-9]/g,'-') : '';
-    var filename = '';
-    if(tipo==='avance')   filename = fecha+'-reporte-avance-'+obraSlug;
-    else if(tipo==='ext') filename = fecha+'-'+estNum+'-'+obraSlug;
-    else if(tipo==='int') filename = fecha+'-'+estNum+'-'+obraSlug;
-    else if(tipo==='extras') filename = fecha+'-conceptos-extra-'+obraSlug;
+    // Nombre del archivo
+    var fechaStr=new Date().toISOString().split('T')[0];
+    var oSlug=o.nombre.replace(/[^a-zA-Z0-9]/g,'-').replace(/-+/g,'-');
+    var filename='';
+    if(tipo==='avance')   filename=fechaStr+'-reporte-avance-'+oSlug;
+    else if(tipo==='ext') filename=fechaStr+'-'+e.num.replace(/[^a-zA-Z0-9]/g,'-')+'-'+oSlug;
+    else if(tipo==='int') filename=fechaStr+'-'+e.num.replace(/[^a-zA-Z0-9]/g,'-')+'-'+oSlug;
+    else if(tipo==='extras') filename=fechaStr+'-conceptos-extra-'+oSlug;
     doc.save(filename+'.pdf');
 
-  }catch(err){alert('Error PDF: '+err.message+'\nLinea: '+err.stack);console.error(err);}
+  }catch(err){alert('Error PDF: '+err.message);console.error(err);}
 };
 </script>
 
