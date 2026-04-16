@@ -3179,8 +3179,15 @@ window.genPDF=function(obraId,estId,tipo){
       doc.text('Pág '+pg+'/'+totalPgs,196,289,'right');
     }
 
-    var nombres={avance:'reporte-avance',ext:'estimacion-ext',int:'estimacion-int',extras:'conceptos-extra'};
-    doc.save(nombres[tipo]+'-'+o.nombre.replace(/[^a-zA-Z0-9]/g,'-')+'.pdf');
+    var fecha = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    var obraSlug = o.nombre.replace(/[^a-zA-Z0-9]/g,'-').replace(/-+/g,'-');
+    var estNum = (tipo==='ext'||tipo==='int') && e ? e.num.replace(/[^a-zA-Z0-9]/g,'-') : '';
+    var filename = '';
+    if(tipo==='avance')   filename = fecha+'-reporte-avance-'+obraSlug;
+    else if(tipo==='ext') filename = fecha+'-'+estNum+'-'+obraSlug;
+    else if(tipo==='int') filename = fecha+'-'+estNum+'-'+obraSlug;
+    else if(tipo==='extras') filename = fecha+'-conceptos-extra-'+obraSlug;
+    doc.save(filename+'.pdf');
 
   }catch(err){alert('Error PDF: '+err.message+'\nLinea: '+err.stack);console.error(err);}
 };
